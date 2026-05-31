@@ -1002,24 +1002,42 @@ const json = await res.json(); if (!json.chart?.result?.length) throw new Error(
 const result = json.chart.result[0]; const t = result.timestamp || []; const q = result.indicators.quote[0];
 let candles = [];
 for (let i = 0; i < t.length; i++) if (q.close[i] != null) candles.push({ t: t[i], o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i], v: q.volume[i] || 0 });
-if (tf === "4H") { 
-  let agg = []; 
-  let currentChunk = []; 
-  let currentChunkHour = -1; 
-  for (const c of candles) { 
-    const d = new Date(c.t * 1000); 
-    const h4 = Math.floor(d.getUTCHours() / 4); 
-    if (currentChunkHour !== h4 && currentChunk.length > 0) { 
-      agg.push({ t: currentChunk[0].t, o: currentChunk[0].o, h: Math.max(...currentChunk.map(x => x.h)), l: Math.min(...currentChunk.map(x => x.l)), c: currentChunk[currentChunk.length - 1].c, v: currentChunk.reduce((s, x) => s + x.v, 0) }); 
-      currentChunk = []; 
-    } 
-    currentChunk.push(c); 
-    currentChunkHour = h4; 
-  } 
-  if (currentChunk.length > 0) { 
-    agg.push({ t: currentChunk[0].t, o: currentChunk[0].o, h: Math.max(...currentChunk.map(x => x.h)), l: Math.min(...currentChunk.map(x => x.l)), c: currentChunk[currentChunk.length - 1].c, v: currentChunk.reduce((s, x) => s + x.v, 0) }); 
-  } 
-  candles = agg; 
+if (tf === "4H") {
+  const bucketSec = 4 * 60 * 60;
+  const buckets = new Map();
+
+  for (const candle of candles) {
+    const bucketT = Math.floor(candle.t / bucketSec) * bucketSec;
+    let b = buckets.get(bucketT);
+
+    if (!b) {
+      b = {
+        t: bucketT,
+        o: candle.o,
+        h: candle.h,
+        l: candle.l,
+        c: candle.c,
+        v: candle.v || 0,
+        lastT: candle.t
+      };
+      buckets.set(bucketT, b);
+      continue;
+    }
+
+    b.h = Math.max(b.h, candle.h);
+    b.l = Math.min(b.l, candle.l);
+
+    if (candle.t >= b.lastT) {
+      b.c = candle.c;
+      b.lastT = candle.t;
+    }
+
+    b.v += candle.v || 0;
+  }
+
+  candles = Array.from(buckets.values())
+    .sort((a, b) => a.t - b.t)
+    .map(({ lastT, ...c }) => c);
 }
 return candles;
 }
@@ -1152,9 +1170,9 @@ bullPct = Math.max(1, Math.min(99, bullPct + techScore));
 let signal = "NEUTRAL", quality = "C";
 if (bullPct >= 58) { signal = "BUY"; quality = bullPct >= 75 ? "A" : "B"; }
 else if (bullPct <= 42) { signal = "SELL"; quality = bullPct <= 25 ? "A" : "B"; }
-// Wrong-direction filter: downgrade quality when signal contradicts trend
-if (signal === "BUY" && f_trend < -0.2) { quality = quality === "A" ? "B" : "C"; reasons.push("⚠️ BUY vs Bearish Trend — Quality Downgraded"); }
-if (signal === "SELL" && f_trend > 0.2) { quality = quality === "A" ? "B" : "C"; reasons.push("⚠️ SELL vs Bullish Trend — Quality Downgraded"); }
+// Wrong-direction filter: force NEUTRAL when signal contradicts trend
+if (signal === "BUY" && f_trend < -0.2) { signal = "NEUTRAL"; quality = "C"; reasons.push("⚠️ BUY vs Bearish Trend → NEUTRAL (Wrong Direction)"); }
+if (signal === "SELL" && f_trend > 0.2) { signal = "NEUTRAL"; quality = "C"; reasons.push("⚠️ SELL vs Bullish Trend → NEUTRAL (Wrong Direction)"); }
 // Exhaustion/entropy quality downgrade
 if (physics.exhaustion && signal !== "NEUTRAL") { quality = "C"; reasons.push("⚠️ Quality → C: Market Exhaustion"); }
 if (entropy > 0.85 && signal !== "NEUTRAL") { quality = "C"; reasons.push("⚠️ Quality → C: High Entropy"); }
