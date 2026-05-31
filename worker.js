@@ -1409,6 +1409,16 @@ return `<pre>PROBABILISTIC FACTOR MODEL
 ------------------------------</pre>`;
 }
 function tradeBlock(price, atrV, signal, pair, conf, f_vol, exp, tf = "15M", isHighNewsRisk = false, structState = null) {
+if (signal !== "BUY" && signal !== "SELL") {
+  return {
+    entry: null, sl: null, tp1: null, tp2: null, tp3: null,
+    filterWarn: "NO TRADE",
+    spreadEst: 0, slD: 0, slMult: 0,
+    session: "NONE",
+    trailLogic: { activationR: 0, stepR: 0, breakevenTrigger: 0, dynamicTrail: "N/A" },
+    block: `<pre>QUANT RISK & BASE SETUP\n------------------------------\n| Sinyal   ${sigLabel(signal)}\n| Status   NO TRADE\n| Reason   Wait for valid BUY/SELL confirmation\n------------------------------\n| Base Ent -\n| Base SL  -\n| Base TP1 -\n| Base TP2 -\n| Base TP3 -\n------------------------------</pre>`
+  };
+}
 const setup = getTradeSetup(price, atrV, signal, pair, f_vol, tf, Date.now(), isHighNewsRisk, structState);
 return { ...setup, block: `<pre>QUANT RISK & BASE SETUP
 ------------------------------
@@ -1492,26 +1502,59 @@ bullPct += macro.macroScore * 0.5; bullPct = Math.max(1, Math.min(99, bullPct));
 let quality = ind.quality, riskLvl = ind.riskLvl;
 const sessionResult = applySessionBehavior(bullPct, quality, riskLvl, macro.riskWarnings);
 bullPct = sessionResult.bullPct; quality = sessionResult.quality; riskLvl = sessionResult.riskLvl;
-let signal = "NEUTRAL";
-if (macro.maxNewsWeight >= 8 && macro.minsToNews < 120) { signal = "WAIT"; quality = "C (Extreme News Risk)"; }
-else if (bullPct >= 58) { signal = "BUY"; quality = bullPct >= 75 ? "A" : "B"; }
-else if (bullPct <= 42) { signal = "SELL"; quality = bullPct <= 25 ? "A" : "B"; }
-else { signal = "WAIT"; quality = "C"; }
+let signal = ind.signal === "NEUTRAL" ? "WAIT" : ind.signal;
+
+if (macro.maxNewsWeight >= 8 && macro.minsToNews < 120) {
+  signal = "WAIT"; quality = "C (Extreme News Risk)";
+} else if (signal !== "BUY" && signal !== "SELL") {
+  signal = "WAIT"; quality = "C";
+} else {
+  if (signal === "BUY" && bullPct < 55) {
+    signal = "WAIT"; quality = "C (Downgraded)";
+  }
+  if (signal === "SELL" && bullPct > 45) {
+    signal = "WAIT"; quality = "C (Downgraded)";
+  }
+}
 const sessionInfo = { name: sessionResult.sessionName, desc: sessionResult.sessionDesc, bias: sessionResult.sessionBias };
 const mtfData = await Promise.all(["15M", "1H", "4H"].map(async (t) => { if (t === user.tf) return { tf: t, regime: regime.split(" ")[0], signal, confidence: bullPct }; const mData = await getMarketData(env, user.pair, t); if (!mData) return { tf: t, regime: "N/A", signal: "N/A", confidence: 0 }; const iData = await getCachedIndicators(env, mData, user.pair, t, false, stats); const conf = iData.signal === "SELL" ? 100 - iData.bullPct : iData.bullPct; return { tf: t, regime: iData.regime.split(" ")[0], signal: iData.signal, confidence: conf }; }));
 const confluence = calculateConfluenceScore(mtfData);
 const htf = mtfData.find((m2) => m2.tf === "4H") || mtfData.find((m2) => m2.tf === "1H");
-if (htf && htf.signal !== "N/A" && signal !== "WAIT" && signal !== "NEUTRAL") {
-if (signal === "BUY" && htf.signal === "SELL" || signal === "SELL" && htf.signal === "BUY") { quality = "C (HTF Conflict)"; bullPct = signal === "BUY" ? Math.max(40, bullPct - 15) : Math.min(60, bullPct + 15); ind.reasons.push(`HTF Filter: Sinyal bertentangan dengan trend ${htf.tf}`); }
-else if (signal === htf.signal) { quality = quality === "B" ? "A" : "A+"; ind.reasons.push(`HTF Alignment: Searah dengan trend ${htf.tf}`); }
-else if (htf.signal === "WAIT" || htf.signal === "NEUTRAL") { quality = "B (HTF Wait)"; bullPct = signal === "BUY" ? Math.max(40, bullPct - 10) : Math.min(60, bullPct + 10); ind.reasons.push(`HTF Filter: Trend ${htf.tf} sedang konsolidasi`); }
+const htfConflict =
+  htf && htf.tf === "4H" &&
+  signal !== "WAIT" && signal !== "NEUTRAL" &&
+  ((signal === "BUY" && htf.signal === "SELL") ||
+   (signal === "SELL" && htf.signal === "BUY"));
+
+if (htfConflict) {
+  const origSignal = signal;
+  ind.reasons.push("HTF Filter: 4H conflict, trade blocked");
+  signal = "WAIT";
+  quality = "C (HTF Conflict)";
+  bullPct = origSignal === "BUY" ? Math.min(bullPct, 55) : Math.max(bullPct, 45);
+} else if (htf && htf.signal !== "N/A" && signal !== "WAIT" && signal !== "NEUTRAL") {
+  if (signal === htf.signal) { quality = quality === "B" ? "A" : "A+"; ind.reasons.push(`HTF Alignment: Searah dengan trend ${htf.tf}`); }
+  else if (htf.signal === "WAIT" || htf.signal === "NEUTRAL") { quality = "B (HTF Wait)"; bullPct = signal === "BUY" ? Math.max(40, bullPct - 10) : Math.min(60, bullPct + 10); ind.reasons.push(`HTF Filter: Trend ${htf.tf} sedang konsolidasi`); }
 }
 if (confluence.strength > 0.6 && signal !== "WAIT" && signal !== "NEUTRAL") { if ((signal === "BUY" && confluence.direction === "BULLISH") || (signal === "SELL" && confluence.direction === "BEARISH")) { bullPct = Math.min(99, bullPct + confluence.strength * 10); if (!quality.includes("A+")) quality = quality === "A" ? "A+" : "A"; ind.reasons.push(`MTF Confluence ${confluence.verdict} (${confluence.percentage}%)`); } }
 else if (confluence.strength < 0.2 && signal !== "WAIT") { quality = quality.includes("A") ? "B (Low Confluence)" : quality; ind.reasons.push(`Low MTF Confluence (${confluence.percentage}%)`); }
 if (bt && Number(bt.exp) < 0 && signal !== "WAIT" && signal !== "NEUTRAL") { quality = "C (Neg. Expectancy)"; bullPct = signal === "BUY" ? Math.max(45, bullPct - 15) : Math.min(55, bullPct + 15); ind.reasons.push(`Quant Warning: Backtest Expectancy Negatif`); }
 if (signal === "BUY" && bullPct < 55) { signal = "WAIT"; quality = "C (Downgraded)"; }
 else if (signal === "SELL" && bullPct > 45) { signal = "WAIT"; quality = "C (Downgraded)"; }
-const displayConf = signal === "SELL" ? 100 - bullPct : bullPct;
+let displayConf = signal === "SELL" ? 100 - bullPct : bullPct;
+
+const weakQuality =
+  String(quality).includes("Conflict") ||
+  String(quality).includes("Neg. Expectancy") ||
+  String(quality).includes("Low Confluence") ||
+  String(quality).includes("Downgraded") ||
+  String(quality).includes("HTF Wait");
+
+if (signal === "WAIT" || signal === "NEUTRAL") {
+  displayConf = Math.min(displayConf, 55);
+} else if (weakQuality) {
+  displayConf = Math.min(displayConf, 65);
+}
 const setup = tradeBlock(m.p, ind.atrV, signal, user.pair, displayConf, ind.factors.vol, bt.exp, user.tf, macro.isHighNewsRisk, ind.structState);
 let lastTradeTxt = "N/A";
 if (env.DB) { try { const lastTrade = await env.DB.prepare("SELECT outcome, rr_hit FROM analytics WHERE user_id=? AND pair=? AND outcome != 'PENDING' ORDER BY timestamp DESC LIMIT 1").bind(user.id, user.pair).first(); if (lastTrade) lastTradeTxt = `${lastTrade.outcome} (${lastTrade.rr_hit > 0 ? "+" : ""}${lastTrade.rr_hit.toFixed(2)}R)`; } catch (e) {} }
