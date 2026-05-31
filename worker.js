@@ -43,7 +43,7 @@ EURJPY: "EURJPY=X", GBPJPY: "GBPJPY=X", AUDJPY: "AUDJPY=X", CADJPY: "CADJPY=X",
 CHFJPY: "CHFJPY=X", EURAUD: "EURAUD=X", GBPAUD: "GBPAUD=X", EURCAD: "EURCAD=X",
 GBPCAD: "GBPCAD=X", XAUUSD: "GC=F", XAGUSD: "SI=F", UKOIL: "BZ=F", USOIL: "CL=F",
 BTCUSD: "BTC-USD", ETHUSD: "ETH-USD", SOLUSD: "SOL-USD", XRPUSD: "XRP-USD",
-ADAUSD: "ADA-USD", DOGEUSD: "DOGE-USD", LTCUSD: "LTC-USD", LINKUSD: "LINKUSD",
+ADAUSD: "ADA-USD", DOGEUSD: "DOGE-USD", LTCUSD: "LTC-USD", LINKUSD: "LINK-USD",
 DOTUSD: "DOT-USD", BCHUSD: "BCH-USD", DXY: "DX-Y.NYB", US10Y: "^TNX",
 VIX: "^VIX", SPX: "^GSPC"
 };
@@ -107,17 +107,34 @@ return true;
 }
 }
 var memCache = new Map();
+var MEM_CACHE_MAX_KEYS = 5000;
+var MEM_CACHE_TTL_MS = 120000;
+var memCacheLastCleanup = 0;
+
+function cleanupMemCache(now = Date.now()) {
+  if (now - memCacheLastCleanup < 30000 && memCache.size <= MEM_CACHE_MAX_KEYS) return;
+  memCacheLastCleanup = now;
+  for (const [k, v] of memCache.entries()) {
+    if (now - v > MEM_CACHE_TTL_MS) memCache.delete(k);
+  }
+  if (memCache.size > MEM_CACHE_MAX_KEYS) {
+    const overflow = memCache.size - MEM_CACHE_MAX_KEYS;
+    let removed = 0;
+    for (const k of memCache.keys()) {
+      memCache.delete(k);
+      removed++;
+      if (removed >= overflow) break;
+    }
+  }
+}
+
 var checkMemRateLimit = (key, ms) => {
-const now = Date.now();
-const last = memCache.get(key) || 0;
-if (now - last < ms) return false;
-memCache.set(key, now);
-if (Math.random() < 0.05) {
-for (const [k, v] of memCache.entries()) {
-if (now - v > 6e4) memCache.delete(k);
-}
-}
-return true;
+  const now = Date.now();
+  cleanupMemCache(now);
+  const last = memCache.get(key) || 0;
+  if (now - last < ms) return false;
+  memCache.set(key, now);
+  return true;
 };
 function getPairProfile(pair, price = 0) {
 const isCrypto = PAIRS.crypto?.includes(pair);
@@ -901,13 +918,19 @@ const hUTC = new Date(timestampMs).getUTCHours(); const isSpreadHour = hUTC === 
 const macroRiskFactor = isHighNewsRisk ? 2 : isSpreadHour ? 1.5 : 1;
 const spreadEst = profile.baseSpread * macroRiskFactor * Math.max(1, f_vol);
 const slippage = atrV * 0.05 * macroRiskFactor;
-let riskFactor = Math.max(0.5, Math.min(3, f_vol * macroRiskFactor));
+let riskFactor = Math.max(0.75, Math.min(2.75, f_vol * macroRiskFactor));
 if (assetClass === "CRYPTO") riskFactor *= 1.2;
 if (assetClass === "XAU" && structState && structState.sweepDetected) riskFactor *= 0.8;
-const slD = atrV * profile.baseSlMult * riskFactor;
+const atrValid = (typeof atrV === "number" && isFinite(atrV) && atrV > 0) ? atrV : (price * 0.01);
+let slD = atrValid * profile.baseSlMult * riskFactor;
+const minSL = Math.max(atrValid * 0.8, spreadEst * 3);
+const maxSL = assetClass === "CRYPTO" ? atrValid * 5 : assetClass === "XAU" ? atrValid * 4 : atrValid * 3.5;
+slD = Math.max(minSL, Math.min(maxSL, slD));
 const entry = isBuy ? price + spreadEst + slippage : price - spreadEst - slippage;
 const sl = isBuy ? entry - slD : entry + slD;
-const tp1 = isBuy ? entry + slD * 1.5 : entry - slD * 1.5;
+let rrMult = 1.5;
+if (isHighNewsRisk || isSpreadHour) rrMult = Math.max(1, rrMult - 0.5);
+const tp1 = isBuy ? entry + slD * rrMult : entry - slD * rrMult;
 const tp2 = isBuy ? entry + slD * 3 : entry - slD * 3;
 const tp3 = isBuy ? entry + slD * 5 : entry - slD * 5;
 let filterWarn = isHighNewsRisk ? "HIGH IMPACT NEWS" : isSpreadHour ? "HIGH SPREAD" : "CLEAR";
@@ -1129,6 +1152,12 @@ bullPct = Math.max(1, Math.min(99, bullPct + techScore));
 let signal = "NEUTRAL", quality = "C";
 if (bullPct >= 58) { signal = "BUY"; quality = bullPct >= 75 ? "A" : "B"; }
 else if (bullPct <= 42) { signal = "SELL"; quality = bullPct <= 25 ? "A" : "B"; }
+// Wrong-direction filter: downgrade quality when signal contradicts trend
+if (signal === "BUY" && f_trend < -0.2) { quality = quality === "A" ? "B" : "C"; reasons.push("⚠️ BUY vs Bearish Trend — Quality Downgraded"); }
+if (signal === "SELL" && f_trend > 0.2) { quality = quality === "A" ? "B" : "C"; reasons.push("⚠️ SELL vs Bullish Trend — Quality Downgraded"); }
+// Exhaustion/entropy quality downgrade
+if (physics.exhaustion && signal !== "NEUTRAL") { quality = "C"; reasons.push("⚠️ Quality → C: Market Exhaustion"); }
+if (entropy > 0.85 && signal !== "NEUTRAL") { quality = "C"; reasons.push("⚠️ Quality → C: High Entropy"); }
 if (structState.sweepDetected) reasons.push("Liquidity Sweep (" + structState.sweepType + ")");
 if (structState.bosConfirmed) reasons.push("Break of Structure (" + structState.bias + ")");
 if (structState.fvgActive) reasons.push("Displacement FVG (" + structState.fvgType + ")");
