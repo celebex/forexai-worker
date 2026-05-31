@@ -1077,7 +1077,11 @@ async () => { await checkCircuitBreakerD1(env, "yahoo"); try { return await fetc
 async () => { await checkCircuitBreakerD1(env, "yahoo"); try { return await fetchYahoo(sym, tf, "query2"); } catch (e) { await tripCircuitBreakerD1(env, "yahoo", 30); throw e; } }
 ];
 if (PAIRS.crypto.includes(pair)) fetchers.unshift(async () => { await checkCircuitBreakerD1(env, "binance"); try { return await fetchBinance(pair, tf); } catch (e) { await tripCircuitBreakerD1(env, "binance", 30); throw e; } });
-if (env.TWELVEDATA_API_KEY) fetchers.push(async () => { await checkCircuitBreakerD1(env, "twelvedata"); try { return await fetchTwelveData(env, pair, tf); } catch (e) { await tripCircuitBreakerD1(env, "twelvedata", 30); throw e; } });
+if (env.TWELVEDATA_API_KEY) {
+  const tdFetcher = async () => { await checkCircuitBreakerD1(env, "twelvedata"); try { return await fetchTwelveData(env, pair, tf); } catch (e) { await tripCircuitBreakerD1(env, "twelvedata", 30); throw e; } };
+  if (PAIRS.xau.includes(pair)) fetchers.unshift(tdFetcher);
+  else fetchers.push(tdFetcher);
+}
 try { rawCandles = await Promise.any(fetchers.map(async (fetcher) => { const res = await fetcher(); if (!res || res.length < 50) throw new Error("Insufficient data"); return res; })); }
 catch (e) { sysLog("WARN", "N/A", "ERR_MARKET_FETCH", { pair, tf, error: "All fetchers failed" }); }
 if (!rawCandles || rawCandles.length < 50) return null;
@@ -1565,14 +1569,16 @@ const isUsdBase = ["USDJPY", "USDCHF", "USDCAD"].includes(user.pair);
 let pairContext = "";
 if (isUsdQuote) pairContext = `\nPERHATIAN: Untuk pair ${user.pair}, penguatan USD berarti BEARISH.`;
 else if (isUsdBase) pairContext = `\nPERHATIAN: Untuk pair ${user.pair}, penguatan USD berarti BULLISH.`;
-const ai1P = `Anda adalah AI-1 Alpha Engine. WAJIB menghasilkan JSON VALID.\nDATA TEKNIKAL:\nSignal = ${signal} (Confidence: ${displayConf}%)\nRegime = ${ind.regime}\nTrend Factor = ${(ind.factors?.trend || 0).toFixed(2)}\nStruct Factor = ${(ind.factors?.struct || 0).toFixed(2)}\nMTF Confluence = ${confluence.verdict} (${confluence.percentage}%)\nRSI = ${fn(rsiV, 1)}\nDATA MACRO & NEWS: ${macro.macroCtx}${pairContext}\nTUGAS:\n- bias: harus sama dengan sinyal (BUY=BULLISH, SELL=BEARISH, NEUTRAL=NEUTRAL)\n- sentiment: berdasarkan macro & news\n- summary: 1 kalimat dalam Bahasa Indonesia\n- narrative: 2-3 kalimat penjelasan struktur market\n- sentiment_reason: 1 kalimat alasan sentimen makro\nHASILKAN HANYA JSON, TIDAK ADA TEKS LAIN.`;
+const candleTime = new Date(m.t[m.t.length - 1] * 1000).toISOString().replace("T", " ").substring(0, 19) + " UTC";
+const reasonsText = (ind.reasons && ind.reasons.length) ? ind.reasons.join("; ") : "Tidak ada alasan dominan";
+const ai1P = `Anda adalah AI-1 Alpha Engine. WAJIB menghasilkan JSON VALID.\nDATA TEKNIKAL:\nPair = ${user.pair} | Timeframe = ${user.tf}\nCandle Time = ${candleTime}\nHarga = ${fn(m.p)}\nSignal = ${signal} (Confidence: ${displayConf}%)\nQuality = ${quality}\nSession = ${sessionInfo.name} (${sessionInfo.desc})\nRegime = ${ind.regime}\nTrend Factor = ${(ind.factors?.trend || 0).toFixed(2)}\nStruct Factor = ${(ind.factors?.struct || 0).toFixed(2)}\nMTF Confluence = ${confluence.verdict} (${confluence.percentage}%)\nRSI = ${fn(rsiV, 1)}\nAlasan Signal: ${reasonsText}\nDATA MACRO & NEWS: ${macro.macroCtx}${pairContext}\nTUGAS:\n- bias: harus sama dengan sinyal (BUY=BULLISH, SELL=BEARISH, NEUTRAL/WAIT=NEUTRAL)\n- sentiment: berdasarkan macro & news\n- summary: 1 kalimat dalam Bahasa Indonesia\n- narrative: 2-3 kalimat penjelasan struktur market\n- sentiment_reason: 1 kalimat alasan sentimen makro\nHASILKAN HANYA JSON, TIDAK ADA TEKS LAIN.`;
 let ai1Result;
-if (isPrem) ai1Result = await ensembleAI(env, [{ provider: "nim", model: "nemotron-3-super-120b-a12b", weight: 1.2 }, { provider: "groq", model: "llama-3.3-70b-versatile", weight: 1.0 }, { provider: "deepseek", model: "deepseek-v4-flash", weight: 1.1 }], { prompt: ai1P, traceId, useCache: true, temperature: 0.3, maxTokens: 450, timeout: 6e3 }, SCHEMAS.AI1);
-else ai1Result = await orchestrateAI(env, "nim", { prompt: ai1P, model: "nemotron-3-super-120b-a12b", backupModel: "nemotron-3-nano-30b-a3b", traceId, useCache: true, temperature: 0.3, maxTokens: 450, timeout: 6e3 }, SCHEMAS.AI1);
+if (isPrem) ai1Result = await ensembleAI(env, [{ provider: "nim", model: "nemotron-3-super-120b-a12b", weight: 1.2 }, { provider: "groq", model: "llama-3.3-70b-versatile", weight: 1.0 }, { provider: "deepseek", model: "deepseek-v4-flash", weight: 1.1 }], { prompt: ai1P, traceId, useCache: false, temperature: 0.3, maxTokens: 450, timeout: 6e3 }, SCHEMAS.AI1);
+else ai1Result = await orchestrateAI(env, "nim", { prompt: ai1P, model: "nemotron-3-super-120b-a12b", backupModel: "nemotron-3-nano-30b-a3b", traceId, useCache: false, temperature: 0.3, maxTokens: 450, timeout: 6e3 }, SCHEMAS.AI1);
 let ai1 = ai1Result.payload;
 if (signal === "BUY" && ai1.bias !== "BULLISH") ai1.bias = "BULLISH";
 else if (signal === "SELL" && ai1.bias !== "BEARISH") ai1.bias = "BEARISH";
-else if (signal === "NEUTRAL" && ai1.bias !== "NEUTRAL") ai1.bias = "NEUTRAL";
+else if ((signal === "NEUTRAL" || signal === "WAIT") && ai1.bias !== "NEUTRAL") ai1.bias = "NEUTRAL";
 if (ai1.summary === "N/A" || ai1.narrative === "N/A") { const trendFactor = ind?.factors?.trend ?? 0; const regimeVec = ind?.regimeVec ?? { trend: 0.33, range: 0.33, volatile: 0.34 }; const fallbackSummary = `Sinyal ${signal} dengan confidence ${displayConf}%. Regime ${ind.regime || "UNKNOWN"}, faktor trend ${trendFactor.toFixed(2)}.`; const reasonsText = (ind.reasons && ind.reasons.length) ? ind.reasons.join(". ") : "Tidak ada alasan dominan."; const fallbackNarrative = `Berdasarkan data teknikal: ${reasonsText}. Probabilitas regime: trending ${(regimeVec.trend * 100).toFixed(0)}%, ranging ${(regimeVec.range * 100).toFixed(0)}%, volatile ${(regimeVec.volatile * 100).toFixed(0)}%.`; ai1.summary = ai1.summary === "N/A" ? fallbackSummary : ai1.summary; ai1.narrative = ai1.narrative === "N/A" ? fallbackNarrative : ai1.narrative; }
 if (ai1.sentiment_reason === "N/A") { const macroSnippet = (macro?.macroCtx || "Kondisi makro netral").substring(0, 100); ai1.sentiment_reason = `Sentimen ${ai1.sentiment || "NEUTRAL"} berdasarkan kondisi makro: ${macroSnippet}.`; }
 let ai2 = { status: "SKIPPED", risk: "N/A", warning: "Upgrade to Premium", macro_synthesis: "N/A", anomaly: "N/A" };
@@ -1581,9 +1587,9 @@ let consensusTxt = "";
 if (isPrem && signal !== "WAIT") {
 let reasonList = (ind.reasons && Array.isArray(ind.reasons)) ? ind.reasons.join(", ") : "Struktur pasar ambigu.";
 if (reasonList.length < 10) reasonList = "Struktur pasar ambigu.";
-const ai2P = `Anda adalah AI-2 Macro Synthesizer & Validator.\nDATA:\nKonfirmasi Sinyal: ${signal} | Probabilitas Bullish: ${bullPct}%\nMTF Confluence: ${confluence.verdict} (${confluence.percentage}%)\nTrigger Mekanis: ${reasonList}\nRegime: TREND ${((ind.regimeVec?.trend || 0) * 100).toFixed(1)}% | RANGING ${((ind.regimeVec?.range || 0) * 100).toFixed(1)}% | VOLATIL ${((ind.regimeVec?.volatile || 0) * 100).toFixed(1)}%\nMacro Context = ${macro.macroCtx}\nTUGAS: Kembalikan JSON LENGKAP.\nHASILKAN HANYI JSON.`;
+const ai2P = `Anda adalah AI-2 Macro Synthesizer & Validator.\nDATA:\nPair = ${user.pair} | Timeframe = ${user.tf}\nHarga = ${fn(m.p)}\nSignal = ${signal} | Confidence = ${displayConf}%\nQuality = ${quality}\nSession = ${sessionInfo.name} (${sessionInfo.desc})\nKonfirmasi Sinyal: ${signal} | Probabilitas Bullish: ${bullPct.toFixed(1)}%\nMTF Confluence: ${confluence.verdict} (${confluence.percentage}%)\nTrigger Mekanis: ${reasonList}\nRegime: TREND ${((ind.regimeVec?.trend || 0) * 100).toFixed(1)}% | RANGING ${((ind.regimeVec?.range || 0) * 100).toFixed(1)}% | VOLATIL ${((ind.regimeVec?.volatile || 0) * 100).toFixed(1)}%\nMacro Context = ${macro.macroCtx}\nTUGAS: Kembalikan JSON LENGKAP.\nHASILKAN HANYA JSON.`;
 await tgLoading(env, chatId, msgId, 80, "AI-2 validating signal...");
-const ai2Result = await orchestrateAI(env, "groq", { prompt: ai2P, model: "openai/gpt-oss-120b", backupModel: "openai/gpt-oss-20b", traceId, useCache: true, temperature: 0.3, maxTokens: 8192, timeout: 8e3 }, SCHEMAS.AI2);
+const ai2Result = await orchestrateAI(env, "groq", { prompt: ai2P, model: "openai/gpt-oss-120b", backupModel: "openai/gpt-oss-20b", traceId, useCache: false, temperature: 0.3, maxTokens: 8192, timeout: 8e3 }, SCHEMAS.AI2);
 ai2 = ai2Result.payload;
 if (!ai2.macro_synthesis || ai2.macro_synthesis === "N/A" || ai2.macro_synthesis.trim() === "") { const tFactor = ind?.factors?.trend ?? 0; const volStr = (ind?.volatility || "NORMAL").toLowerCase(); ai2.macro_synthesis = `Berdasarkan makro: ${macro?.riskSentiment || "Netral"}. Sinyal ${signal} didukung oleh faktor ${tFactor > 0 ? "bullish" : "bearish"} (${tFactor.toFixed(2)}). Regime ${ind?.regime || "UNKNOWN"} dengan volatilitas ${volStr}.`; }
 if (ai2.anomaly === "N/A") ai2.anomaly = "Tidak terdeteksi anomali.";
