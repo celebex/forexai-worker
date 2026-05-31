@@ -1847,3 +1847,434 @@ if (data === "admin_topup") { let txs = []; if (env.DB) { try { const res = awai
 if (data === "admin_give") { await setUser(env, user.id, { state: "send_energy" }); return tgSend(env, chatId, "Format: <code>123456789 50</code> (energy) atau <code>123456789 vip 30</code> (tier)"); }
 if (data === "admin_broadcast") { await setUser(env, user.id, { state: "admin_broadcast" }); return tgSend(env, chatId, "Kirim pesan broadcast.\n/cancel untuk batal."); }
 
+}
+if (data.startsWith("buy_qris_")) {
+if (user.state === "pending_approval") return tgAns(env, cbId, "Transaksi masih diproses.", true);
+const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
+if (!adminId) return tgAns(env, cbId, "Admin belum diatur.", true);
+const item = data.replace("buy_qris_", ""); const txId = Math.floor(Date.now() / 1e3).toString(36) + Math.random().toString(36).substring(2, 6); const timestamp = Date.now();
+await setUser(env, user.id, { state: `wait_tf_${item}_${txId}_${timestamp}` });
+const caption = `Scan QRIS untuk paket <b>${item}</b>.
+Kirim BUKTI TRANSFER setelah selesai.
+<i>Batas: 15 Menit.</i>`;
+if (msgId) await tgDelete(env, chatId, msgId);
+const qrisUrl = "https://pub-6d46cfc0c84049a7a119b8c88bc09f0c.r2.dev/qris.png";
+const res = await tgPost(env, "sendPhoto", { chat_id: chatId, photo: qrisUrl, caption, parse_mode: "HTML", reply_markup: { inline_keyboard: [[btn("🏠 Home", "home")]] } });
+if (!res || !res.ok) await tgSend(env, chatId, `QRIS: ${qrisUrl}
+Kirim bukti transfer setelah selesai.`);
+return;
+}
+if (data.startsWith("acc_pay_") || data.startsWith("rej_pay_")) { if (!isAdmin(env, user.id)) throw new Error("AKSES_DITOLAK"); const isApprove = data.startsWith("acc_pay_"); const parts = data.split("_"); const targetId = parts[2]; const item = parts[3]; const txId = parts[4] || "old"; return processPersetujuanPembayaran(env, chatId, msgId, targetId, item, txId, isApprove); }
+if (data.startsWith("cat_")) { const cat = data.slice(4); return tgEdit(env, chatId, msgId, `<pre>PILIH PAIR - ${cat.toUpperCase()}</pre>`, buildPairKB(PAIRS[cat])); }
+if (data.startsWith("p_")) { const pair = data.slice(2); await setUser(env, user.id, { pair }); return tgEdit(env, chatId, msgId, `<pre>${pair}
+Pilih Timeframe:</pre>`, tfKB); }
+if (data.startsWith("t_")) { const tf = data.slice(2); await setUser(env, user.id, { tf }); return runAnalysis(env, { ...user, tf }, chatId, msgId, cbId); }
+if (data.startsWith("scan_")) return runScan(env, user, chatId, msgId, data.slice(5), cbId);
+return tgAns(env, cbId, "Fitur belum tersedia.").catch(() => {});
+}
+async function handleMessage(env, user, chatId, text, msgId, host) {
+const cmd = text.trim(); const cmdLower = cmd.toLowerCase();
+if (cmd.startsWith("/")) {
+await tgDelete(env, chatId, msgId);
+if (cmdLower.startsWith("/start")) { const parts = cmd.split(" "); if (parts[1] && parts[1].startsWith("ref_")) { const refCode = parts[1].replace("ref_", ""); await tgSend(env, chatId, `Selamat datang! Anda mendaftar dengan kode referral <code>${esc(refCode)}</code>.
+Bonus <b>+${REFERRAL_CONFIG.BONUS_NEW_USER_ENERGY} Energy</b> telah ditambahkan!`); } await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, await getHomeText(env, { ...user, state: "main" }), getMainKB(isAdmin(env, user.id))); }
+if (cmdLower === "/myreferral" || cmdLower === "/referral") return showReferralMenu(env, user, chatId, null);
+if (cmdLower === "/refhistory") return showReferralHistory(env, user, chatId, null);
+if (isAdmin(env, user.id)) {
+if (cmdLower === "/admin") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "<pre>ADMIN PANEL</pre>", adminKB); }
+if (cmdLower.startsWith("/grant_tier") || cmdLower.startsWith("/addpremium") || cmdLower.startsWith("/addvip")) { const parts = text.split(/\s+/); if (parts.length < 4) return tgSend(env, chatId, "Format: /grant_tier <user_id> <premium/vip> <days>"); const target = parts[1]; const tier = parts[2].toLowerCase(); const days = parseInt(parts[3]); if (env.DB) { let targetUser = await env.DB.prepare("SELECT premium_until, vip_until FROM users WHERE id=?").bind(target).first(); let currentPrem = targetUser && targetUser.premium_until > Date.now() ? targetUser.premium_until : Date.now(); let currentVip = targetUser && targetUser.vip_until > Date.now() ? targetUser.vip_until : Date.now(); if (tier === "premium") { const expiry = currentPrem + days * 864e5; await env.DB.prepare("UPDATE users SET premium=1, premium_until=? WHERE id=?").bind(expiry, target).run(); } else if (tier === "vip") { const expiry = currentVip + days * 864e5; await env.DB.prepare("UPDATE users SET vip=1, vip_until=? WHERE id=?").bind(expiry, target).run(); } await tgSend(env, chatId, `Grant ${tier} ke ${target} ${days} hari.`); await tgSend(env, target, `Upgrade ${tier.toUpperCase()} ${days} hari!`); } return; }
+}
+if (cmdLower === "/menu" || cmdLower === "/dashboard" || cmdLower === "/home") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, await getHomeText(env, { ...user, state: "main" }), getMainKB(isAdmin(env, user.id))); }
+if (cmdLower === "/exit" || cmdLower === "/keluar") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, `<pre>Kembali ke menu.</pre>`, getMainKB(isAdmin(env, user.id))); }
+if (cmdLower === "/clear" || cmdLower === "/resetcontext") { await doSession(env, user.id, "clearChat"); return tgSend(env, chatId, `<pre>Memori dibersihkan.</pre>`, aiKB); }
+if (cmdLower === "/news" || cmdLower === "/calendar") return showNews(env, user, chatId, null, 1);
+if (cmdLower === "/market") { const m = await getMarketData(env, user.pair, user.tf); if (!m) return tgSend(env, chatId, "Data tidak tersedia."); const ind = await getCachedIndicators(env, m, user.pair, user.tf, false); const sessions = getMarketSessions(); return tgSend(env, chatId, `<b>MARKET: ${user.pair}</b>\n${m.p}\n${ind.regime}\n${ind.volatility}\n${sessions.active}`); }
+return;
+}
+const REPLY_MAP = { 
+  "🔋 Charge Energi": "store", "Charge Energi": "store",
+  "📰 Market News": "show_news_1", "Market News": "show_news_1",
+  "📈 Mayor Forex": "cat_mayor", "Mayor Forex": "cat_mayor",
+  "🔀 Cross Forex": "cat_cross", "Cross Forex": "cat_cross",
+  "🏆 XAU & Komoditas": "cat_xau", "XAU & Komoditas": "cat_xau",
+  "🪙 Crypto": "cat_crypto", "Crypto": "cat_crypto",
+  "🔍 Market Scan": "scan_menu", "Market Scan": "scan_menu",
+  "📊 MTF Analysis": "mtf_analysis", "MTF Analysis": "mtf_analysis",
+  "🛡️ Risk Setup": "risk_calc", "Risk Setup": "risk_calc",
+  "🤖 AI Terminal": "ai_enter", "AI Terminal": "ai_enter",
+  "👥 Referral": "referral_menu", "Referral": "referral_menu",
+  "🏠 Home": "home", "Home": "home", "Kembali": "home",
+  "⚙️ Admin Panel": "admin_menu", "Admin Panel": "admin_menu",
+  "⏱️ 5 Menit": "t_5M", "5 Menit": "t_5M",
+  "⏱️ 15 Menit": "t_15M", "15 Menit": "t_15M",
+  "⏱️ 30 Menit": "t_30M", "30 Menit": "t_30M",
+  "⏱️ 1 Jam": "t_1H", "1 Jam": "t_1H",
+  "⏱️ 4 Jam": "t_4H", "4 Jam": "t_4H",
+  "📊 Lihat MTF Analysis": "mtf_analysis", "Lihat MTF Analysis": "mtf_analysis",
+  "🔄 Analisa Ulang": "reanalyze", "Analisa Ulang": "reanalyze",
+  "📈 Semua Indikator": "ind_all", "Semua Indikator": "ind_all",
+  "🔍 Scan Pasar": "scan_menu", "Scan Pasar": "scan_menu",
+  "🔍 Scan Mayor": "scan_mayor", "Scan Mayor": "scan_mayor",
+  "🔍 Scan Cross": "scan_cross", "Scan Cross": "scan_cross",
+  "🔍 Scan XAU": "scan_xau", "Scan XAU": "scan_xau",
+  "🔍 Scan Crypto": "scan_crypto", "Scan Crypto": "scan_crypto",
+  "🔍 Scan Semua": "scan_all", "Scan Semua": "scan_all",
+  "🧹 Clear Memory": "ai_clear", "Clear Memory": "ai_clear",
+  "🚪 Keluar Terminal": "ai_exit", "Keluar Terminal": "ai_exit",
+  "🔄 Toggle On/Off": "admin_toggle", "Toggle On/Off": "admin_toggle",
+  "🤖 Auto Mode": "admin_auto", "Auto Mode": "admin_auto",
+  "❤️ Check Health": "admin_health", "Check Health": "admin_health",
+  "🔑 Check API": "admin_api", "Check API": "admin_api",
+  "👥 Check Users": "admin_users", "Check Users": "admin_users",
+  "💳 Info Topup": "admin_topup", "Info Topup": "admin_topup",
+  "🎁 Send Energy/Tier": "admin_give", "Send Energy/Tier": "admin_give",
+  "📢 Broadcast": "admin_broadcast", "Broadcast": "admin_broadcast",
+  "🔄 Refresh Bot": "admin_refresh", "Refresh Bot": "admin_refresh",
+  "🔄 Refresh MTF": "mtf_analysis", "Refresh MTF": "mtf_analysis",
+  "🔄 Refresh Risk": "risk_calc", "Refresh Risk": "risk_calc"
+};
+let mappedData = REPLY_MAP[text];
+if (!mappedData && ALL_PAIRS.includes(text)) mappedData = "p_" + text;
+if (mappedData) {
+await tgDelete(env, chatId, msgId);
+const loadingRes = await tgPost(env, "sendMessage", { chat_id: chatId, text: "Memproses..." }); const botMsgId = loadingRes?.result?.message_id;
+if (botMsgId) { try { await handleCB(env, user, chatId, botMsgId, mappedData, null, host); } catch (e) { if (e.message !== "NOTIF_SUCCESS_ACC" && e.message !== "NOTIF_REJECT") await tgEdit(env, chatId, botMsgId, "Error: " + e.message, getMainKB(isAdmin(env, user.id))).catch(() => {}); } }
+return;
+}
+if (user.state === "pending_approval") { await tgSend(env, chatId, "Pembayaran sedang diproses.", getMainKB(isAdmin(env, user.id))); return; }
+if (user.state === "ai_terminal") return handleAITerminal(env, user, chatId, text);
+if (user.state === "send_energy" && isAdmin(env, user.id)) {
+try {
+const parts = text.split(/\s+/); if (parts.length < 2) { await setUser(env, user.id, { state: "main" }); await tgSend(env, chatId, "Format salah.", adminKB); return; }
+const target = parts[0].replace("@", ""); const val1 = parts[1].toLowerCase();
+if (val1 === "vip" || val1 === "premium") { const days = parseInt(parts[2]) || 30; if (env.DB) { let targetUser = null; try { targetUser = await env.DB.prepare("SELECT * FROM users WHERE id=? OR username=?").bind(target, target).first(); } catch (e) {} if (targetUser) { let currentPrem = targetUser.premium_until > Date.now() ? targetUser.premium_until : Date.now(); let currentVip = targetUser.vip_until > Date.now() ? targetUser.vip_until : Date.now(); if (val1 === "premium") await env.DB.prepare("UPDATE users SET premium=1, premium_until=? WHERE id=?").bind(currentPrem + days * 864e5, targetUser.id).run(); else await env.DB.prepare("UPDATE users SET vip=1, vip_until=? WHERE id=?").bind(currentVip + days * 864e5, targetUser.id).run(); await tgSend(env, chatId, `Grant ${val1} ke ${esc(targetUser.username || targetUser.id)}.`, adminKB); await tgSend(env, targetUser.id, `Upgrade ${val1.toUpperCase()} ${days} hari!`); } else await tgSend(env, chatId, "User tidak ditemukan.", adminKB); } }
+else { const amount = parseInt(val1); if (isNaN(amount)) { await setUser(env, user.id, { state: "main" }); await tgSend(env, chatId, "Jumlah harus angka.", adminKB); return; } if (env.DB) { let targetUser = null; try { targetUser = await env.DB.prepare("SELECT * FROM users WHERE id=? OR username=?").bind(target, target).first(); } catch (e) {} if (targetUser) { await env.DB.prepare("UPDATE users SET energy = energy + ? WHERE id=?").bind(amount, targetUser.id).run(); await tgSend(env, chatId, `+${amount} Energy ke ${esc(targetUser.username || targetUser.id)}`, adminKB); await tgSend(env, targetUser.id, `+${amount} Energy dari Admin!`); } else await tgSend(env, chatId, "User tidak ditemukan.", adminKB); } }
+await setUser(env, user.id, { state: "main" });
+} catch (err) { await tgSend(env, chatId, "Error: " + err.message); await setUser(env, user.id, { state: "main" }); }
+return;
+}
+await tgDelete(env, chatId, msgId);
+}
+async function handleQRIS(request, env, ctx) {
+try {
+if (env.DB) { try { await env.DB.prepare("INSERT INTO qris_logs (timestamp, ip, user_agent) VALUES (?, ?, ?)").bind(Date.now(), request.headers.get("cf-connecting-ip") || "unknown", request.headers.get("user-agent") || "unknown").run(); } catch (e) {} }
+if (!env.qris) return new Response("R2 'qris' not found", { status: 500 });
+const object = await env.qris.get("qris.png"); if (!object) return new Response("QRIS not found", { status: 404 });
+if (env.CACHE) await env.CACHE.put("last_qris_access", Date.now().toString());
+const headers = new Headers(); object.writeHttpMetadata(headers); headers.set("etag", object.httpEtag); headers.set("Content-Type", "image/png");
+return new Response(object.body, { headers });
+} catch (err) { return new Response("Internal Server Error", { status: 500 }); }
+}
+async function verifyAPIRequest(request, env) {
+const url = new URL(request.url);
+if (url.pathname === "/api/health") return { authorized: true, userId: "0" };
+const apiKey = request.headers.get("X-API-Key") || request.headers.get("Authorization")?.replace("Bearer ", "");
+if (!apiKey) return { authorized: false, error: "Missing API Key", status: 401 };
+if (env.MASTER_API_KEY && apiKey === env.MASTER_API_KEY) return { authorized: true, isAdmin: true, userId: "ADMIN" };
+if (apiKey.includes(":") && env.DB) { const [userId, token] = apiKey.split(":"); try { const user = await env.DB.prepare("SELECT id, premium, vip FROM users WHERE id=?").bind(userId).first(); if (user) { const expectedToken = await generateUserToken(env, userId); if (token === expectedToken) return { authorized: true, userId, user }; } } catch (e) {} }
+if (env.DB && /^\d+$/.test(apiKey)) { const user = await env.DB.prepare("SELECT id FROM users WHERE id=?").bind(apiKey).first(); if (user) { const allowed = await checkPersistentRateLimit(env, `api_legacy:${apiKey}`, 5, 60000); if (!allowed) return { authorized: false, error: "Rate limit exceeded", status: 429 }; return { authorized: true, userId: apiKey, user }; } }
+return { authorized: false, error: "Invalid API Key", status: 401 };
+}
+async function generateUserToken(env, userId) {
+const secret = env.MASTER_API_KEY || "default_secret_change_me"; const encoder = new TextEncoder();
+const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(userId));
+return btoa(String.fromCharCode(...new Uint8Array(signature))).substring(0, 32);
+}
+async function verifyWebhookSignature(request, env) {
+if (!env.WEBHOOK_SECRET) return true;
+const signature = request.headers.get("X-Webhook-Signature"); if (!signature) return false;
+const body = await request.clone().text(); const encoder = new TextEncoder();
+const key = await crypto.subtle.importKey("raw", encoder.encode(env.WEBHOOK_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
+const expected = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+return expected === signature;
+}
+async function handleAPI(request, env, path, corsHeaders) {
+const url = new URL(request.url);
+const auth = await verifyAPIRequest(request, env);
+if (!auth.authorized) return new Response(JSON.stringify({ error: auth.error }), { status: auth.status || 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+const userId = auth.userId || url.searchParams.get("userId") || "0";
+const user = await getUser(env, userId);
+const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+try {
+if (path === "/api/health") { const dbOk = !!env.DB; const kvOk = !!(env.CACHE || env.KV); const stats = await getGlobalStats(env); return jsonResponse({ status: "OK", db: dbOk, kv: kvOk, stats, version: VERSION }); }
+if (path === "/webhook/eco" && request.method === "POST") { if (!await verifyWebhookSignature(request, env)) return jsonResponse({ error: "Invalid signature" }, 401); const payload = await request.json(); if (env.CACHE) await env.CACHE.put("latest_eco_release", JSON.stringify(payload), { expirationTtl: 3600 }); return new Response("OK", { status: 200 }); }
+if (path === "/api/user") { const tier = getTierLimits(env, user); return jsonResponse({ user, tier }); }
+if (path === "/api/referral/stats") { const stats = await getReferralStats(env, userId); return jsonResponse(stats); }
+if (path === "/api/referral/code") { const code = await ensureReferralCode(env, userId); return jsonResponse({ code }); }
+if (path === "/api/energy") return jsonResponse({ energy: user.energy, last_regen: user.last_regen });
+if (path === "/api/premium") return jsonResponse({ premium: user.premium, vip: user.vip, premium_until: user.premium_until, vip_until: user.vip_until });
+if (path === "/api/market") { const pair = url.searchParams.get("pair") || "XAUUSD"; const tf = url.searchParams.get("tf") || "15M"; const m = await getMarketData(env, pair, tf); if (!m) return jsonResponse({ error: "No data" }, 404); return jsonResponse(m); }
+if (path === "/api/signals") { const pair = url.searchParams.get("pair") || "XAUUSD"; const tf = url.searchParams.get("tf") || "15M"; const m = await getMarketData(env, pair, tf); if (!m) return jsonResponse({ error: "No data" }, 404); const stats = await getGlobalStats(env, pair, tf); const ind = await getCachedIndicators(env, m, pair, tf, true, stats); return jsonResponse(ind); }
+if (path === "/api/signal") { const pair = url.searchParams.get("pair") || "EURUSD"; const tf = url.searchParams.get("tf") || "15M"; const m = await getMarketData(env, pair, tf); if (!m) return jsonResponse({ error: "No data" }, 404); const stats = await getGlobalStats(env, pair, tf); const ind = await getCachedIndicators(env, m, pair, tf, true, stats); return jsonResponse({ signal: ind.signal, confidence: (ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct) / 100, price: m.p, pair, timestamp: Date.now() }); }
+if (path.startsWith("/api/scan/")) { const cat = path.split("/")[3]; const tf = url.searchParams.get("tf") || "15M"; const list = cat === "all" ? ALL_PAIRS : PAIRS[cat] ?? PAIRS.mayor; const res = []; const stats = await getGlobalStats(env); for (const pair of list) { try { const m = await getMarketData(env, pair, tf); if (m) { const ind = await getCachedIndicators(env, m, pair, tf, false, stats); const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct; res.push({ pair, signal: ind.signal, conf, rsi: ind.rsiV, price: m.p, reason: ind.reasons[0] || "" }); } } catch (e) {} } return jsonResponse({ category: cat, tf, results: res }); }
+if (path === "/api/ai" && request.method === "POST") { const body = await request.json(); const prompt = body.prompt; const pair = body.pair || "XAUUSD"; const tf = body.tf || "15M"; if (!await consumeEnergy(env, user, COSTS.CHAT)) return jsonResponse({ error: "Not enough energy" }, 403); const m = await getMarketData(env, pair, tf); let mktCtx = "Data tidak tersedia."; if (m) { const ind = await getCachedIndicators(env, m, pair, tf, true); const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct; mktCtx = `Pair:${pair} TF:${tf} Price:${m.p} Signal:${ind.signal}(${conf}%)`; } const sysLock = `Anda adalah FOREX AI TERMINAL Quant Engine. Context: ${mktCtx}`; const messages = [{ role: "system", content: sysLock }, { role: "user", content: prompt }]; let aiRes = await callAI(env, "nim", { prompt: messages, model: "nemotron-3-nano-30b-a3b", traceId: "API", useCache: false }); if (!aiRes || aiRes.includes("error")) aiRes = await callAI(env, "groq", { prompt: messages, model: "llama-3.3-70b-versatile", traceId: "API", useCache: false }); return jsonResponse({ response: aiRes }); }
+return jsonResponse({ error: "Not found" }, 404);
+} catch (e) { return jsonResponse({ error: e.message }, 500); }
+}
+// ============================================================
+// MAIN WORKER EXPORT
+// ============================================================
+var worker_quant_engine_default = {
+async fetch(request, env, ctx) {
+const url = new URL(request.url);
+const path = url.pathname;
+const allowedOrigins = (env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+const requestOrigin = request.headers.get("Origin");
+const corsOrigin = allowedOrigins.length === 0 ? "*" : (requestOrigin && allowedOrigins.includes(requestOrigin) ? requestOrigin : (allowedOrigins[0] || "*"));
+const corsHeaders = {
+"Access-Control-Allow-Origin": corsOrigin,
+"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+"Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key, X-Webhook-Signature, X-Telegram-Bot-Api-Secret-Token",
+"Access-Control-Max-Age": "86400"
+};
+if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+if (path === "/" || path === "/webhook" || path.startsWith("/telegram")) {
+if (request.method === "POST" && env.TELEGRAM_WEBHOOK_SECRET) {
+const telegramSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+if (telegramSecret !== env.TELEGRAM_WEBHOOK_SECRET) { sysLog("WARN", "SEC", "INVALID_TG_SECRET", { ip: request.headers.get("cf-connecting-ip"), provided: telegramSecret ? "***" : "missing" }); return new Response("Unauthorized", { status: 403 }); }
+}
+}
+if (path === "/qris") return handleQRIS(request, env, ctx);
+if (path.startsWith("/api/") || path.startsWith("/webhook/")) { await initDB(env); return handleAPI(request, env, path, corsHeaders); }
+if (request.method !== "POST") return new Response(`FOREX AI Quant Engine - ONLINE`, { status: 200 });
+let update;
+try { update = await request.json(); } catch { return new Response("Bad Request", { status: 400 }); }
+const updateId = update.update_id;
+if (updateId) { const dedupKey = `webhook_dedup:${updateId}`; const isDuplicate = await getKV(env, dedupKey); if (isDuplicate) return new Response("OK", { status: 200 }); await setKV(env, dedupKey, true, 60); }
+const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
+if (!chatId) return new Response("OK", { status: 200 });
+const username = update.message?.from?.username || update.callback_query?.from?.username || "";
+await initDB(env);
+let referredByCode = null;
+if (update.message?.text?.startsWith("/start ref_")) referredByCode = update.message.text.replace("/start ref_", "").trim();
+const user = await getUser(env, chatId.toString(), username, referredByCode);
+const rlKey = `user:${user.id}`;
+if (!isAdmin(env, user.id)) {
+const allowed = await checkPersistentRateLimit(env, rlKey, SECURITY.RATE_LIMIT_MAX_REQUESTS, SECURITY.RATE_LIMIT_WINDOW_MS);
+if (!allowed) { if (update.callback_query) await tgAns(env, update.callback_query.id, "Rate limit! Tunggu sebentar.", true); else if (checkMemRateLimit(`spam:${user.id}`, 5000)) await tgSend(env, chatId, "Terlalu banyak request. Tunggu 1 menit."); return new Response("OK", { status: 200 }); }
+}
+if (!checkMemRateLimit(rlKey, 1500)) { if (update.callback_query) await tgAns(env, update.callback_query.id, "Jangan terlalu cepat!", true); return new Response("OK", { status: 200 }); }
+const status = await getKV(env, "bot_status"); const isBotOn = status === null ? true : status;
+const userIdStr = (update.message?.from?.id || update.callback_query?.from?.id || chatId).toString();
+if (!isBotOn && !isAdmin(env, userIdStr)) {
+ctx.waitUntil((async () => {
+if (update.message?.text || update.message?.photo) { const spamKey = `mt_spam_${userIdStr}`; const lastSent = await getKV(env, spamKey); if (!lastSent) { await setKV(env, spamKey, true, 300); await tgSend(env, chatId, `<b>MAINTENANCE MODE</b>\nBot sedang maintenance. Mohon tunggu.`); } }
+else if (update.callback_query) await tgAns(env, update.callback_query.id, "Maintenance.", true);
+})());
+return new Response("OK", { status: 200 });
+}
+if (update.callback_query) {
+const { id: cbId, data, message } = update.callback_query; const msgId = message?.message_id; const host = url.origin;
+ctx.waitUntil((async () => {
+let alertMsg = "", isAlert = false;
+try { await handleCB(env, user, chatId, msgId, data, cbId, host); }
+catch (e) {
+if (e.message === "AKSES_DITOLAK") { alertMsg = "Akses ditolak!"; isAlert = true; }
+else if (e.message === "TRANSAKSI_DIPROSES") { alertMsg = "Sudah diproses!"; isAlert = true; }
+else if (e.message === "ITEM_TIDAK_VALID") { alertMsg = "Item tidak valid!"; isAlert = true; }
+else if (e.message === "NOTIF_SUCCESS_ACC") { alertMsg = "Disetujui!"; isAlert = true; }
+else if (e.message === "NOTIF_REJECT") { alertMsg = "Ditolak!"; isAlert = false; }
+else if (e.message === "CLEAR_MEMORI") { alertMsg = "Memori dibersihkan!"; isAlert = true; }
+else if (e.message === "GAGAL_UPDATE_DB") { alertMsg = "Gagal update!"; isAlert = true; }
+else { sysLog("ERROR", "SYS", "ERR_HANDLE_CB", { err: e.message }); if (msgId) await tgEdit(env, chatId, msgId, "Error: " + e.message, getMainKB(isAdmin(env, user.id))).catch(() => {}); }
+} finally { if (alertMsg !== "") await tgAns(env, cbId, alertMsg, isAlert).catch(() => {}); else await tgAns(env, cbId).catch(() => {}); }
+})());
+return new Response("OK", { status: 200 });
+}
+const msg = update.message;
+if (msg && (msg.text || msg.photo || msg.video)) {
+ctx.waitUntil((async () => {
+if (user.state && user.state.startsWith("wait_tf_")) {
+const parts = user.state.split("_"); const item = parts[2]; const txId = parts[3] || "old"; const ts2 = parseInt(parts[4] || "0");
+if (ts2 > 0 && Date.now() - ts2 > 15 * 60 * 1e3) { sysLog("INFO", "PAYMENT", "PAYMENT_EXPIRED", { user: user.id, item, txId }); await setUser(env, user.id, { state: "main" }); try { if (env.DB) await env.DB.prepare("INSERT INTO transactions (tx_id, user_id, amount, currency, type, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(`qris_${txId}`, user.id, 0, "IDR", `QRIS_${item}`, "EXPIRED", Date.now()).run(); } catch (e) {} await tgSend(env, chatId, "Waktu habis (15 menit).", getMainKB(isAdmin(env, user.id))); return; }
+if (!msg.photo) { await tgSend(env, chatId, "Kirim FOTO bukti transfer."); return; }
+const photoId = msg.photo[msg.photo.length - 1].file_id;
+const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
+if (!adminId) { await tgSend(env, chatId, "Admin belum dikonfigurasi."); return; }
+const adminCaption = `<b>PAYMENT BARU (QRIS)</b>\nUser: @${esc(user.username || "NoUsername")}\nID: <code>${user.id}</code>\nItem: <b>${item}</b>\nTxID: <b>${txId}</b>`;
+const acceptCb = `acc_pay_${user.id}_${item}_${txId}`; const rejectCb = `rej_pay_${user.id}_${item}_${txId}`;
+const res = await tgPost(env, "sendPhoto", { chat_id: adminId, photo: photoId, caption: adminCaption, parse_mode: "HTML", reply_markup: { inline_keyboard: [[btn("Terima", acceptCb), btn("Tolak", rejectCb)]] } });
+if (res && res.ok) { try { if (env.DB) await env.DB.prepare("INSERT INTO transactions (tx_id, user_id, amount, currency, type, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(`qris_${txId}`, user.id, 0, "IDR", `QRIS_${item}`, "PENDING", Date.now()).run(); } catch (e) {} await setUser(env, user.id, { state: "pending_approval" }); await tgSend(env, chatId, "Bukti dikirim. Tunggu konfirmasi.", getMainKB(isAdmin(env, user.id))); }
+else await tgSend(env, chatId, "Gagal kirim bukti.");
+return;
+}
+const text = (msg.text || msg.caption || "").trim();
+if (user.state === "admin_broadcast" && isAdmin(env, user.id)) {
+if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); await tgSend(env, chatId, "Dibatalkan."); return; }
+let users = []; if (env.DB) { try { const res = await env.DB.prepare("SELECT id FROM users").all(); users = res.results || []; } catch (e) {} }
+let count = 0; const batchSize = 20; const safeText = esc(text);
+for (let i = 0; i < users.length; i += batchSize) { const batch = users.slice(i, i + batchSize); await Promise.all(batch.map(async (u) => { try { if (msg.photo) await tgPost(env, "sendPhoto", { chat_id: u.id, photo: msg.photo[msg.photo.length - 1].file_id, caption: safeText, parse_mode: "HTML" }); else if (msg.video) await tgPost(env, "sendVideo", { chat_id: u.id, video: msg.video.file_id, caption: safeText, parse_mode: "HTML" }); else if (text) await tgSend(env, u.id, safeText); count++; } catch (e) {} })); if (i + batchSize < users.length) await new Promise((r) => setTimeout(r, 1e3)); }
+await setUser(env, user.id, { state: "main" }); await tgSend(env, chatId, `Broadcast ke ${count} users.`); return;
+}
+if (user.state === "wait_crypto_tx") {
+if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Dibatalkan.", getMainKB(isAdmin(env, user.id))); }
+const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
+if (!adminId) return tgSend(env, chatId, "Admin belum diatur.");
+let adminMsg = `<b>CRYPTO PAYMENT</b>\nUser: @${esc(user.username || "NoUsername")}\nID: <code>${user.id}</code>\n`;
+if (msg.photo) { adminMsg += `Bukti terlampir.`; await tgPost(env, "sendPhoto", { chat_id: adminId, photo: msg.photo[msg.photo.length - 1].file_id, caption: adminMsg, parse_mode: "HTML", reply_markup: { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] } }); }
+else { adminMsg += `TxHash: ${esc(text)}`; await tgSend(env, adminId, adminMsg, { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] }); }
+await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Bukti dikirim ke Admin.", getMainKB(isAdmin(env, user.id)));
+}
+if (user.state === "contact_admin") {
+if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Dibatalkan."); }
+const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
+if (!adminId) return tgSend(env, chatId, "Admin belum diatur.");
+let inboxMsg = `<b>DARI USER</b>\n@${esc(user.username || "NoUsername")}\nID: <code>${user.id}</code>\n${esc(text)}`;
+if (msg.photo) await tgPost(env, "sendPhoto", { chat_id: adminId, photo: msg.photo[msg.photo.length - 1].file_id, caption: inboxMsg, parse_mode: "HTML", reply_markup: { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] } });
+else await tgSend(env, adminId, inboxMsg, { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] });
+await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Pesan dikirim.", getMainKB(isAdmin(env, user.id)));
+}
+if (user.state && user.state.startsWith("replying_") && isAdmin(env, user.id)) {
+if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Dibatalkan.", adminKB); }
+const targetId = user.state.replace("replying_", ""); let replyMsg = `<b>BALASAN ADMIN:</b>\n${esc(text)}`;
+try { if (msg.photo) await tgPost(env, "sendPhoto", { chat_id: targetId, photo: msg.photo[msg.photo.length - 1].file_id, caption: replyMsg, parse_mode: "HTML" }); else await tgSend(env, targetId, replyMsg); await tgSend(env, chatId, `Terkirim ke ${targetId}.`, adminKB); }
+catch (e) { await tgSend(env, chatId, `Gagal: ${e.message}`, adminKB); }
+await setUser(env, user.id, { state: "main" }); return;
+}
+if (msg.text) { try { const host = url.origin; await handleMessage(env, user, chatId, text, msg.message_id, host); } catch (e) { sysLog("ERROR", "SYS", "ERR_HANDLE_MESSAGE", { err: e.message }); await tgSend(env, chatId, `Error: ${e.message}`).catch(() => {}); } return; }
+})());
+return new Response("OK", { status: 200 });
+}
+return new Response("OK", { status: 200 });
+},
+async scheduled(event, env, ctx) {
+ctx.waitUntil((async () => {
+const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
+if (env.QUEUE) await env.QUEUE.send({ type: "CLEANUP_DB" }).catch(() => {});
+try {
+const news = await fetchForexFactoryNews(env);
+if (news && news.length > 0) {
+const now = Date.now();
+let premUsersList = null;
+for (const n of news) {
+const mins = Math.round((n.timeMs - now) / 6e4);
+if (mins > 0 && mins <= 30) {
+const eventHash = fastHash(n.title + n.date); const alertKey = `alerted_news:${eventHash}`; const alreadyAlerted = await getKV(env, alertKey);
+if (!alreadyAlerted) {
+await setKV(env, alertKey, true, 86400);
+if (env.DB) {
+if (!premUsersList) {
+const premUsers = await env.DB.prepare("SELECT id FROM users WHERE premium=1 OR vip=1").all();
+premUsersList = premUsers?.results || [];
+}
+if (premUsersList.length > 0) {
+const alertMsg = `<b>HIGH IMPACT NEWS ALERT</b>\n<b>${esc(n.country)} ${esc(n.title)}</b>\nForecast: ${esc(n.forecast || "-")}\nPrevious: ${esc(n.previous || "-")}\n<i>Volatilitas HIGH!</i>`;
+const limitUsers = premUsersList.slice(0, 15);
+for (const u of limitUsers) { if (env.QUEUE) await env.QUEUE.send({ type: "SEND_ALERT", payload: { chatId: u.id, text: alertMsg } }).catch(() => {}); else await tgSend(env, u.id, alertMsg); }
+}
+}
+}
+}
+}
+}
+} catch (e) { sysLog("ERROR", "SYS", "ERR_SCHEDULED_NEWS", { err: e.message }); }
+try {
+const lastWfRun = await getKV(env, "last_wf_run"); const now = Date.now();
+if (!lastWfRun || (now - lastWfRun) > 6 * 3600 * 1000) {
+sysLog("INFO", "CRON", "START_WALK_FORWARD_BATCH");
+const topPairs = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"]; const tfs = ["15M", "1H", "4H"]; let computed = 0;
+for (const pair of topPairs) { for (const tf of tfs) { try { const m = await getMarketData(env, pair, tf); if (m && m.c.length > 100) { const result = runWalkForwardValidation(m, pair, tf); await setKV(env, `bt:${pair}:${tf}`, result, 21600); computed++; } } catch (e) { sysLog("WARN", "CRON", "WF_FAIL", { pair, tf, err: e.message }); } } }
+await setKV(env, "last_wf_run", now, 21600); sysLog("INFO", "CRON", "WF_BATCH_DONE", { computed });
+}
+} catch (e) { sysLog("ERROR", "CRON", "ERR_WF_CRON", { err: e.message }); }
+try {
+const autoMode = await getKV(env, "auto_mode"); const lastAutoRun = await getKV(env, "last_auto_run"); const now = Date.now(); const TWO_HOURS = 2 * 60 * 60 * 1000;
+if (autoMode && (!lastAutoRun || (now - lastAutoRun) > TWO_HOURS)) {
+sysLog("INFO", "AUTO", "START_2H_CYCLE");
+const stats = await getGlobalStats(env);
+const scanPairs = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"];
+const scanTFs = ["15M", "1H"];
+let premiumUsers = []; if (env.DB) { try { const res = await env.DB.prepare("SELECT id FROM users WHERE premium=1 OR vip=1").all(); if (res && res.results) premiumUsers = res.results.map((u) => u.id); } catch (e) {} }
+const highConvictionSignals = []; const marketSummary = { buy: [], sell: [], total_scanned: 0 };
+let evaluatedPairs = new Set();
+for (const pair of scanPairs) {
+for (const tf of scanTFs) {
+try {
+marketSummary.total_scanned++;
+const m = await getMarketData(env, pair, tf); if (!m) continue;
+if (!evaluatedPairs.has(pair)) {
+await evaluatePendingSignals(env, pair, m.p);
+evaluatedPairs.add(pair);
+}
+const ind = await getCachedIndicators(env, m, pair, tf, true, stats);
+if (ind.signal === "BUY") marketSummary.buy.push(`${pair}/${tf}`);
+else if (ind.signal === "SELL") marketSummary.sell.push(`${pair}/${tf}`);
+
+const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct;
+if ((ind.signal === "BUY" || ind.signal === "SELL") && conf >= 60) {
+const alertKey = `auto_alert:${pair}:${tf}:${ind.signal}`;
+const recentlyAlerted = await getKV(env, alertKey);
+if (!recentlyAlerted) {
+await setKV(env, alertKey, true, 3600);
+const setup = getTradeSetup(m.p, ind.atrV, ind.signal, pair, ind.factors.vol, tf, Date.now(), false, ind.structState);
+highConvictionSignals.push({ pair, tf, signal: ind.signal, quality: ind.quality, bullPct: conf, setup, reasons: ind.reasons });
+}
+}
+} catch (e) { sysLog("ERROR", "AUTO", "ERR_SCAN", { pair, tf, err: e.message }); }
+}
+}
+const reportTime = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
+let reportMsg = `<b>AUTONOMOUS AI REPORT (2H CYCLE)</b>\n<i>${reportTime} WITA</i>\n<pre>================================\nMARKET SCAN SUMMARY\n================================\nTotal Scanned: ${marketSummary.total_scanned}\nBUY Signals : ${marketSummary.buy.length}\nSELL Signals: ${marketSummary.sell.length}\nHigh Convic.: ${highConvictionSignals.length}\n================================</pre>\n<b>GLOBAL STATS:</b>\n- Winrate: ${stats.wr.toFixed(1)}%\n- Avg RR: ${stats.avg_rr.toFixed(2)}\n- Total Trades: ${stats.total_trades}\n`;
+if (highConvictionSignals.length > 0) { reportMsg += `\n<b>HIGH CONVICTION SETUPS:</b>\n`; for (const sig of highConvictionSignals.slice(0, 5)) reportMsg += `\n<b>${sig.pair} ${sig.tf}</b> ${sigLabel(sig.signal)} (${sig.quality})\n- Confidence: ${sig.bullPct.toFixed(0)}%\n- Entry: ${f(sig.setup.entry, sig.pair)}\n- SL: ${f(sig.setup.sl, sig.pair)}\n- TP1: ${f(sig.setup.tp1, sig.pair)}\n- TP2: ${f(sig.setup.tp2, sig.pair)}\n`; }
+else reportMsg += `\n<i>Tidak ada setup high conviction dalam 2 jam terakhir.</i>`;
+reportMsg += `\n<i>Auto-generated by FOREX AI Quant Engine</i>`;
+if (adminId) await tgSend(env, adminId, reportMsg);
+if (premiumUsers.length > 0) {
+let userMsg = reportMsg; if (highConvictionSignals.length > 0) userMsg += `\n<i>Exclusive untuk Premium/VIP members.</i>`;
+const notifiedUsers = premiumUsers.slice(0, 15);
+for (const uid of notifiedUsers) { 
+    if (uid === adminId) continue; 
+    try { 
+        if (env.QUEUE) {
+            await env.QUEUE.send({ type: "SEND_ALERT", payload: { chatId: uid, text: userMsg } }).catch(() => {});
+        } else {
+            await tgSend(env, uid, userMsg); 
+        }
+    } catch (e) { 
+        sysLog("ERROR", "AUTO", "ERR_NOTIFY", { uid, err: e.message }); 
+    } 
+}
+sysLog("INFO", "AUTO", "NOTIFIED_USERS", { count: notifiedUsers.length });
+}
+await setKV(env, "last_auto_run", now, 7200); sysLog("INFO", "AUTO", "CYCLE_COMPLETE", { signals: highConvictionSignals.length, notified: premiumUsers.length });
+}
+} catch (e) { sysLog("ERROR", "AUTO", "ERR_AUTO_MODE_CRON", { err: e.message }); }
+if (!adminId) return;
+let alerts = []; const services = ["yahoo", "binance", "twelvedata", "deepseek", "groq", "nim", "cf"];
+for (const s of services) { const key = `cb:${s}`; try { const res = await env.DB.prepare("SELECT value FROM app_state WHERE key = ? AND expires_at > ?").bind(key, Date.now()).first(); if (res?.value === "1" || res?.value === 1) alerts.push(`${s.toUpperCase()} circuit breaker active!`); } catch (e) {} }
+if (alerts.length > 0) { const alertKey = `admin_api_alert_${Math.floor(Date.now() / 36e5)}`; const alreadyAlerted = await getKV(env, alertKey); if (!alreadyAlerted) { await setKV(env, alertKey, true, 3600); await tgSend(env, adminId, `<b>SYSTEM ALERT</b>\n${alerts.join("\n")}`); } }
+})());
+},
+async queue(batch, env, ctx) {
+for (const msg of batch.messages) {
+try {
+const { type, payload } = msg.body;
+if (type === "CLEANUP_DB" && env.DB) { const fourteenDaysAgo = Date.now() - 14 * 864e5; await env.DB.prepare("DELETE FROM analytics WHERE timestamp < ?").bind(fourteenDaysAgo).run().catch(() => {}); await env.DB.prepare("DELETE FROM app_state WHERE expires_at > 0 AND expires_at < ?").bind(Date.now()).run().catch(() => {}); await env.DB.prepare("DELETE FROM ai_logs WHERE timestamp < ?").bind(fourteenDaysAgo).run().catch(() => {}); }
+else if (type === "SEND_ALERT" && env.BOT_TOKEN) await tgSend(env, payload.chatId, payload.text);
+else if (type === "FLUSH_AI_LOGS" && env.DB) { for (const log of payload) await env.DB.prepare("INSERT INTO ai_logs (id, trace_id, provider, model, prompt, response, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(log.id, log.traceId, log.provider, log.model, log.prompt, log.response, log.timestamp).run().catch(() => {}); }
+} catch (e) { sysLog("ERROR", "QUEUE", "ERR_QUEUE_PROCESS", { err: e?.message || "Unknown" }); }
+}
+}
+};
+var UserSessionDO = class {
+static { __name(this, "UserSessionDO"); }
+constructor(state, env) { this.state = state; this.env = env; }
+async fetch(req) {
+const url = new URL(req.url); const action = url.pathname.substring(1); let data = null;
+if (req.body) data = await req.json().catch(() => null);
+let session = await this.state.storage.get("session") || { chatHistory: [], paymentState: null, lastActivity: 0 };
+if (session.lastActivity > 0 && Date.now() - session.lastActivity > 864e5) { session.paymentState = null; session.chatHistory = []; }
+session.lastActivity = Date.now();
+let responseData = { success: true };
+if (action === "getChat") responseData = session.chatHistory || [];
+else if (action === "saveChat") session.chatHistory = data || [];
+else if (action === "clearChat") session.chatHistory = [];
+else if (action === "setPayment") session.paymentState = data;
+else if (action === "getPayment") responseData = session.paymentState;
+await this.state.storage.put("session", session);
+return Response.json(responseData);
+}
+};
+export { UserSessionDO, worker_quant_engine_default as default };
