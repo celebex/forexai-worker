@@ -883,9 +883,14 @@ else if (state.displacementStrength > 1) { state.bosConfirmed = true; state.bias
 if (c0 > lastLow) { state.sweepDetected = true; state.sweepType = "SELL_SIDE_SWEPT"; state.bias = "BULLISH"; state.marketPhase = "MANIPULATION"; state.structScore = 0.8; }
 else if (state.displacementStrength > 1) { state.bosConfirmed = true; state.bias = "BEARISH"; state.marketPhase = "EXPANSION"; state.structScore = -1; }
 }
-if (assetClass === "XAU") { if (state.sweepDetected) state.structScore *= 1.5; }
-else if (assetClass === "CRYPTO") { if (state.fvgActive) state.structScore *= 1.5; }
-else if (assetClass === "FOREX") { if (state.bosConfirmed) state.structScore *= 1.2; }
+if (assetClass === "XAU") {
+  if (state.sweepDetected) state.structScore *= 1.5;
+} else if (assetClass === "XAG") {
+  if (state.sweepDetected) state.structScore *= 1.2;
+  if (state.fvgActive) state.structScore *= 1.1;
+} else if (assetClass === "FOREX") {
+  if (state.bosConfirmed) state.structScore *= 1.2;
+}
 return state;
 }
 function calculatePosteriorProbability(assetClass, struct, regimeVec, macroScore) {
