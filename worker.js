@@ -78,7 +78,7 @@ var DISCLAIMERS = [
   "⚠️ LEGAL DISCLAIMER: Bot ini hanya alat bantu analisa. Pengguna MEMAHAMI dan SETUJU bahwa semua keputusan trading adalah TANGGUNG JAWAB PENUH pengguna.",
   "⚠️ BEBAS TUNTUTAN: Pengguna melepaskan hak tuntutan hukum terhadap pengembang/bot ini. Trading berisiko, kerugian adalah tanggung jawab pengguna.",
   "⚠️ DISCLAIMER KERAS: Market selalu dinamis. Sinyal dapat BERUBAH KAPAN SAJA. Selalu gunakan Stop Loss! Tidak ada jaminan profit.",
-  "⚠️ LIABILITAS: Bot ini disediakan SEBAGAI ADANYA (AS IS) tanpa jaminan akurasi atau keuntungan. Pengembang TIDAK BERTANGGUNG JAWAB atas kerugian finansial apapun yang timbul dari penggunaan bot ini.",
+  "⚠️ LIABILITAS: Bot ini disediakan tanpa jaminan akurasi atau keuntungan. Pengembang TIDAK BERTANGGUNG JAWAB atas kerugian finansial apapun yang timbul dari penggunaan bot ini.",
   "⚠️ ANALISA BERUBAH: Sinyal dan analisa ini DAPAT BERUBAH mendadak sesuai kondisi market. Selalu verifikasi ulang sebelum entry."
 ];
 var WALLETS = {
