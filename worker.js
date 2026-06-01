@@ -1191,8 +1191,8 @@ if (entropy > 0.85) { techScore *= 0.3; reasons.push("High Shannon Entropy (Rand
 else if (entropy < 0.4) { techScore *= 1.3; reasons.push("Low Entropy (Algorithmic Trend)"); }
 bullPct = Math.max(1, Math.min(99, bullPct + techScore));
 let signal = "NEUTRAL", quality = "C";
-if (bullPct >= 58) { signal = "BUY"; quality = bullPct >= 75 ? "A" : "B"; }
-else if (bullPct <= 42) { signal = "SELL"; quality = bullPct <= 25 ? "A" : "B"; }
+if (bullPct >= 55) { signal = "BUY"; quality = bullPct >= 72 ? "A" : "B"; }
+else if (bullPct <= 45) { signal = "SELL"; quality = bullPct <= 28 ? "A" : "B"; }
 // Wrong-direction filter: block signal only when 2+ opposing factors present (not just 1)
 if (signal === "BUY") {
   const bearCount = [f_trend < -0.4, structState.bias === "BEARISH" || structState.structScore < -0.8, volumeReliable && instMACD.bias === "🔴 BEARISH"].filter(Boolean).length;
@@ -1950,7 +1950,7 @@ const exactActions = {
 "store": () => showStore(env, user, chatId, msgId),
 "reanalyze": () => runAnalysis(env, user, chatId, msgId, cbId),
 "ind_all": () => showIndAll(env, user, chatId, msgId),
-"mtf_analysis": async () => { if (user.pair) { return showMTFAnalysis(env, user, chatId, msgId, cbId); } await setUser(env, user.id, { state: "mtf_pending" }); return tgEdit(env, chatId, msgId, `<pre>MTF ANALYSIS\\nPilih Pair untuk dianalisa:</pre>`, buildPairKB(ALL_PAIRS)); },
+"mtf_analysis": async () => { await setUser(env, user.id, { state: "mtf_pending" }); return tgEdit(env, chatId, msgId, `<pre>MTF ANALYSIS\\nPilih Pair untuk dianalisa:</pre>`, buildPairKB(ALL_PAIRS)); },
 "scan_menu": () => tgEdit(env, chatId, msgId, `<pre>MARKET SCAN
 Pilih kategori:</pre>`, scanMenuKB),
 "risk_calc": () => showRiskCalc(env, user, chatId, msgId),
