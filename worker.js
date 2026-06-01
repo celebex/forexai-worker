@@ -2199,6 +2199,8 @@ async function verifyAPIRequest(request, env) {
 const url = new URL(request.url);
 if (url.pathname === "/api/health") return { authorized: true, userId: "0" };
 if (url.pathname === "/api/forex") return { authorized: true, userId: "0" };
+if (url.pathname === "/api/xau") return { authorized: true, userId: "0" };
+if (url.pathname === "/api/prices") return { authorized: true, userId: "0" };
 const apiKey = request.headers.get("X-API-Key") || request.headers.get("Authorization")?.replace("Bearer ", "");
 if (!apiKey) return { authorized: false, error: "Missing API Key", status: 401 };
 if (env.MASTER_API_KEY && apiKey === env.MASTER_API_KEY) return { authorized: true, isAdmin: true, userId: "ADMIN" };
