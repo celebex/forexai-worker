@@ -4,7 +4,7 @@ function __name(target, value) {
 // ============================================================
 // FOREX AI QUANT ENGINE - FULL PATCHED & STABILIZED
 // ============================================================
-var VERSION = "FOREX AI Quant Engine";
+var VERSION = "FOREX AI Quant Engine v2.0-SIGNALFIX";
 var TG_API = "https://api.telegram.org/bot";
 var SECURITY = {
 RATE_LIMIT_WINDOW_MS: 60000,
@@ -1535,7 +1535,7 @@ const ind = await getCachedIndicators(env, m, user.pair, user.tf, true, stats, b
 let { bullPct, rsiV, regime, bt } = ind;
 await tgLoading(env, chatId, msgId, 50, "Building Macro Context...");
 const macro = await buildMacroContext(env, user, m, ind);
-bullPct += macro.macroScore * 0.5; bullPct = Math.max(1, Math.min(99, bullPct));
+bullPct += macro.macroScore * 0.3; bullPct = Math.max(1, Math.min(99, bullPct));
 let quality = ind.quality, riskLvl = ind.riskLvl;
 const sessionResult = applySessionBehavior(bullPct, quality, riskLvl, macro.riskWarnings);
 bullPct = sessionResult.bullPct; quality = sessionResult.quality; riskLvl = sessionResult.riskLvl;
@@ -1546,20 +1546,20 @@ if (macro.maxNewsWeight >= 8 && macro.minsToNews < 120) {
 } else if (signal !== "BUY" && signal !== "SELL") {
   signal = "WAIT"; quality = "C";
 } else {
-  if (signal === "BUY" && bullPct < 52) {
+  if (signal === "BUY" && bullPct < 50) {
     signal = "WAIT"; quality = "C (Downgraded)";
   }
-  if (signal === "SELL" && bullPct > 48) {
+  if (signal === "SELL" && bullPct > 50) {
     signal = "WAIT"; quality = "C (Downgraded)";
   }
 }
 // Macro conflict filter: block signal if macro regime strongly opposes
-if (signal === "BUY" && macro.macroScore <= -25) {
+if (signal === "BUY" && macro.macroScore <= -35) {
   signal = "WAIT"; quality = "C (Macro Conflict)";
   bullPct = Math.min(bullPct, 55);
   ind.reasons.push("Macro Filter: BUY conflicts with DXY/Yield regime");
 }
-if (signal === "SELL" && macro.macroScore >= 25) {
+if (signal === "SELL" && macro.macroScore >= 35) {
   signal = "WAIT"; quality = "C (Macro Conflict)";
   bullPct = Math.max(bullPct, 45);
   ind.reasons.push("Macro Filter: SELL conflicts with DXY/Yield regime");
@@ -1587,8 +1587,6 @@ if (htfConflict) {
 if (confluence.strength > 0.6 && signal !== "WAIT" && signal !== "NEUTRAL") { if ((signal === "BUY" && confluence.direction === "BULLISH") || (signal === "SELL" && confluence.direction === "BEARISH")) { bullPct = Math.min(99, bullPct + confluence.strength * 10); if (!quality.includes("A+")) quality = quality === "A" ? "A+" : "A"; ind.reasons.push(`MTF Confluence ${confluence.verdict} (${confluence.percentage}%)`); } }
 else if (confluence.strength < 0.2 && signal !== "WAIT") { quality = quality.includes("A") ? "B (Low Confluence)" : quality; ind.reasons.push(`Low MTF Confluence (${confluence.percentage}%)`); }
 if (bt && Number(bt.exp) < 0 && signal !== "WAIT" && signal !== "NEUTRAL") { quality = "C (Neg. Expectancy)"; bullPct = signal === "BUY" ? Math.max(45, bullPct - 15) : Math.min(55, bullPct + 15); ind.reasons.push(`Quant Warning: Backtest Expectancy Negatif`); }
-if (signal === "BUY" && bullPct < 52) { signal = "WAIT"; quality = "C (Downgraded)"; }
-  else if (signal === "SELL" && bullPct > 48) { signal = "WAIT"; quality = "C (Downgraded)"; }
 let displayConf = signal === "SELL" ? 100 - bullPct : bullPct;
 
 const weakQuality =
@@ -1952,7 +1950,7 @@ const exactActions = {
 "store": () => showStore(env, user, chatId, msgId),
 "reanalyze": () => runAnalysis(env, user, chatId, msgId, cbId),
 "ind_all": () => showIndAll(env, user, chatId, msgId),
-"mtf_analysis": async () => { await setUser(env, user.id, { state: "mtf_pending" }); return tgEdit(env, chatId, msgId, `<pre>MTF ANALYSIS\nPilih Pair untuk dianalisa:</pre>`, buildPairKB(ALL_PAIRS)); },
+"mtf_analysis": async () => { if (user.pair) { return showMTFAnalysis(env, user, chatId, msgId, cbId); } await setUser(env, user.id, { state: "mtf_pending" }); return tgEdit(env, chatId, msgId, `<pre>MTF ANALYSIS\\nPilih Pair untuk dianalisa:</pre>`, buildPairKB(ALL_PAIRS)); },
 "scan_menu": () => tgEdit(env, chatId, msgId, `<pre>MARKET SCAN
 Pilih kategori:</pre>`, scanMenuKB),
 "risk_calc": () => showRiskCalc(env, user, chatId, msgId),
