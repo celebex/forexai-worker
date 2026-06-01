@@ -33,7 +33,6 @@ var PAIRS = {
 mayor: ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"],
 cross: ["EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "CADJPY", "CHFJPY", "EURAUD", "GBPAUD", "EURCAD", "GBPCAD"],
 xau: ["XAUUSD", "XAGUSD", "UKOIL", "USOIL"],
-crypto: ["BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "DOGEUSD", "LTCUSD", "LINKUSD", "DOTUSD", "BCHUSD"]
 };
 var ALL_PAIRS = [...PAIRS.mayor, ...PAIRS.cross, ...PAIRS.xau];
 var YAHOO = {
@@ -42,9 +41,7 @@ USDCAD: "CAD=X", AUDUSD: "AUDUSD=X", NZDUSD: "NZDUSD=X", EURGBP: "EURGBP=X",
 EURJPY: "EURJPY=X", GBPJPY: "GBPJPY=X", AUDJPY: "AUDJPY=X", CADJPY: "CADJPY=X",
 CHFJPY: "CHFJPY=X", EURAUD: "EURAUD=X", GBPAUD: "GBPAUD=X", EURCAD: "EURCAD=X",
 GBPCAD: "GBPCAD=X", XAUUSD: "GC=F", XAGUSD: "SI=F", UKOIL: "BZ=F", USOIL: "CL=F",
-BTCUSD: "BTC-USD", ETHUSD: "ETH-USD", SOLUSD: "SOL-USD", XRPUSD: "XRP-USD",
-ADAUSD: "ADA-USD", DOGEUSD: "DOGE-USD", LTCUSD: "LTC-USD", LINKUSD: "LINK-USD",
-DOTUSD: "DOT-USD", BCHUSD: "BCH-USD", DXY: "DX-Y.NYB", US10Y: "^TNX",
+DXY: "DX-Y.NYB", US10Y: "^TNX",
 VIX: "^VIX", SPX: "^GSPC"
 };
 var TF_CFG = {
@@ -55,9 +52,8 @@ var TF_CFG = {
 var TFS = Object.keys(TF_CFG).filter((tf) => tf !== "1D");
 var DEC = {
 USDJPY: 2, EURJPY: 2, GBPJPY: 2, AUDJPY: 2, CADJPY: 2, CHFJPY: 2,
-XAUUSD: 2, XAGUSD: 3, UKOIL: 2, USOIL: 2, BTCUSD: 2, ETHUSD: 2,
-SOLUSD: 3, XRPUSD: 4, ADAUSD: 4, DOGEUSD: 5, LTCUSD: 2, LINKUSD: 3,
-DOTUSD: 3, BCHUSD: 2, DXY: 3, US10Y: 3, VIX: 2, SPX: 2
+XAUUSD: 2, XAGUSD: 3, UKOIL: 2, USOIL: 2,
+DXY: 3, US10Y: 3, VIX: 2, SPX: 2
 };
 var COSTS = { ANALYSIS: 5, MULTITF: 15, DEEPAI: 5, DASHBOARD: 5, SCAN: 5, CHAT: 2 };
 var REFERRAL_CONFIG = {
@@ -137,27 +133,24 @@ var checkMemRateLimit = (key, ms) => {
   return true;
 };
 function getPairProfile(pair, price = 0) {
-const isCrypto = PAIRS.crypto?.includes(pair);
 const isXAU = pair === "XAUUSD";
 const isXAG = pair === "XAGUSD";
 const isJPY = pair.includes("JPY");
 const isGBP = pair.includes("GBP");
 const isOil = pair.includes("OIL");
 const isMayor = PAIRS.mayor?.includes(pair);
-const bbwNorm = isCrypto ? 5 : isOil ? 1.5 : isXAU ? 0.4 : isXAG ? 0.5 : isGBP && isJPY ? 0.35 : isJPY ? 0.3 : isGBP ? 0.25 : isMayor ? 0.08 : 0.2;
+const bbwNorm = isOil ? 1.5 : isXAU ? 0.4 : isXAG ? 0.5 : isGBP && isJPY ? 0.35 : isJPY ? 0.3 : isGBP ? 0.25 : isMayor ? 0.08 : 0.2;
 let baseSlMult = 1.5;
-if (isCrypto) baseSlMult = 2.5;
-else if (isOil) baseSlMult = 2;
+if (isOil) baseSlMult = 2;
 else if (isXAU || isGBP) baseSlMult = 1.8;
 else if (isJPY) baseSlMult = 1.6;
 let baseSpread = 15e-5;
 if (isJPY) baseSpread = isGBP ? 0.03 : 0.02;
 else if (isXAU) baseSpread = 0.3;
 else if (isXAG) baseSpread = 0.03;
-else if (isCrypto) baseSpread = price * 1e-3;
 else if (isOil) baseSpread = 0.03;
 else if (isGBP) baseSpread = 25e-5;
-return { isCrypto, isXAU, isXAG, isJPY, isGBP, isOil, isMayor, bbwNorm, baseSlMult, baseSpread };
+return { isXAU, isXAG, isJPY, isGBP, isOil, isMayor, bbwNorm, baseSlMult, baseSpread };
 }
 function getMarketSessions() {
 const now = new Date();
@@ -834,7 +827,7 @@ var findFractals = (h, l, n = 2) => { let highs = [], lows = []; for (let i = n;
 var calcTrendFactor = (price, e20, e50, vwap, atr) => { const zEma = Math.max(-3, Math.min(3, (price - e50) / (atr || 1))) / 3; const zVwap = Math.max(-3, Math.min(3, (price - vwap) / (atr || 1))) / 3; const emaSlope = (e20 - e50) / (e50 || 1); const zSlope = Math.max(-1, Math.min(1, emaSlope * 100)); return zEma * 0.4 + zVwap * 0.4 + zSlope * 0.2; };
 var calcVolatilityFactor = (bbW, bbwNorm, atr, price) => { const relBbw = bbW / (bbwNorm || 0.1); const atrPct = atr / price; return Math.max(0.1, Math.min(3, relBbw * 0.5 + atrPct * 100 * 0.5)); };
 var calcRegimeVector = (trendFactor, volFactor) => { const absTrend = Math.abs(trendFactor); const trendProb = Math.min(1, absTrend * 1.5); const volProb = Math.min(1, Math.max(0, volFactor - 1)); const rangeProb = Math.max(0, 1 - trendProb - volProb); const sum = trendProb + volProb + rangeProb; return { trend: trendProb / sum, range: rangeProb / sum, volatile: volProb / sum }; };
-function getAssetClass(pair) { if (pair === "XAUUSD") return "XAU"; if (pair === "XAGUSD") return "XAG"; if (PAIRS.xau.includes(pair)) return "XAU"; if (PAIRS.crypto.includes(pair)) return "CRYPTO"; return "FOREX"; }
+function getAssetClass(pair) { if (pair === "XAUUSD") return "XAU"; if (pair === "XAGUSD") return "XAG"; if (PAIRS.xau.includes(pair)) return "XAU"; return "FOREX"; }
 var calcMarketPhysics = (c) => {
     if (c.length < 5) return { velocity: 0, acceleration: 0, exhaustion: false };
     const v1 = c[c.length - 1] - c[c.length - 2];
@@ -986,7 +979,7 @@ async function fetchTwelveData(env, pair, tf) {
 if (!env.TWELVEDATA_API_KEY) throw new Error("No TwelveData API Key");
 const intvMap = { "5M": "5min", "15M": "15min", "30M": "30min", "1H": "1h", "4H": "4h", "1D": "1day" };
 const intv = intvMap[tf] || "15min"; let sym = pair;
-if (pair.length === 6 && !PAIRS.crypto.includes(pair) && pair !== "UKOIL" && pair !== "USOIL") sym = pair.substring(0, 3) + "/" + pair.substring(3, 6);
+if (pair.length === 6 && pair !== "UKOIL" && pair !== "USOIL") sym = pair.substring(0, 3) + "/" + pair.substring(3, 6);
 else if (pair === "UKOIL") sym = "BRENT"; else if (pair === "USOIL") sym = "WTI";
 const controller = new AbortController(); const id = setTimeout(() => controller.abort(), 8e3);
 const res = await fetch(`https://api.twelvedata.com/time_series?symbol=${sym}&interval=${intv}&outputsize=200&apikey=${env.TWELVEDATA_API_KEY}`, { signal: controller.signal });
@@ -1042,17 +1035,6 @@ if (tf === "4H") {
 }
 return candles;
 }
-async function fetchBinance(pair, tf) {
-if (!PAIRS.crypto.includes(pair)) throw new Error("Not a Binance pair");
-const sym = pair.replace("USD", "USDT");
-const intvMap = { "5M": "5m", "15M": "15m", "30M": "30m", "1H": "1h", "4H": "4h", "1D": "1d" };
-const intv = intvMap[tf] || "15m";
-const controller = new AbortController(); const id = setTimeout(() => controller.abort(), 8e3);
-const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${intv}&limit=200`, { signal: controller.signal });
-clearTimeout(id); if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
-const data = await res.json();
-return data.map((d) => ({ t: Math.floor(d[0] / 1e3), o: parseFloat(d[1]), h: parseFloat(d[2]), l: parseFloat(d[3]), c: parseFloat(d[4]), v: parseFloat(d[5]) }));
-}
 function cleanAndValidateCandles(candles) {
 if (!candles || candles.length === 0) return [];
 candles.sort((a, b) => a.t - b.t); let unique = [], lastT = 0;
@@ -1077,7 +1059,6 @@ const fetchers = [
 async () => { await checkCircuitBreakerD1(env, "yahoo"); try { return await fetchYahoo(sym, tf, "query1"); } catch (e) { await tripCircuitBreakerD1(env, "yahoo", 30); throw e; } },
 async () => { await checkCircuitBreakerD1(env, "yahoo"); try { return await fetchYahoo(sym, tf, "query2"); } catch (e) { await tripCircuitBreakerD1(env, "yahoo", 30); throw e; } }
 ];
-if (PAIRS.crypto.includes(pair)) fetchers.unshift(async () => { await checkCircuitBreakerD1(env, "binance"); try { return await fetchBinance(pair, tf); } catch (e) { await tripCircuitBreakerD1(env, "binance", 30); throw e; } });
 if (env.TWELVEDATA_API_KEY) {
   const tdFetcher = async () => { await checkCircuitBreakerD1(env, "twelvedata"); try { return await fetchTwelveData(env, pair, tf); } catch (e) { await tripCircuitBreakerD1(env, "twelvedata", 30); throw e; } };
   if (PAIRS.xau.includes(pair)) fetchers.unshift(tdFetcher);
@@ -1143,7 +1124,7 @@ let newsStr = "";
 try { const hfmRes = await fetch("https://www.hfm.com/rss/news", { signal: AbortSignal.timeout(3e3) }).catch(() => null); if (hfmRes && hfmRes.ok) newsStr += "[HFM Feed Active] "; } catch (e) {}
 if (env.ALPHA_VANTAGE_API_KEY) {
 try {
-let topics = "forex"; if (pair === "XAUUSD") topics = "commodities"; else if (PAIRS.crypto.includes(pair)) topics = "blockchain";
+let topics = "forex"; if (pair === "XAUUSD") topics = "commodities";
 const res = await fetch(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&topics=${topics}&limit=3&apikey=${env.ALPHA_VANTAGE_API_KEY}`, { signal: AbortSignal.timeout(5e3) });
 if (res.ok) { const data = await res.json(); if (data.feed) { const headlines = data.feed.slice(0, 3).map((n) => `"${n.title}" (${n.overall_sentiment_label})`); newsStr += headlines.join(" | "); } }
 } catch (e) { sysLog("WARN", "SYS", "ERR_AV_NEWS", { err: e?.message || "Unknown" }); }
@@ -1287,7 +1268,7 @@ centralBankStance = us10yData.p > 4 ? "HAWKISH" : "DOVISH";
 let cotScore = 0;
 if (dxyData && dxyData.c && dxyData.c.length > 20) { const dxyMom = (dxyData.p - dxyData.c[dxyData.c.length - 20]) / dxyData.c[dxyData.c.length - 20]; cotScore = Math.max(-1, Math.min(1, dxyMom * 10)); cotProxy = cotScore > 0.2 ? "Net Long USD (Extreme)" : cotScore > 0 ? "Net Long USD" : cotScore < -0.2 ? "Net Short USD (Extreme)" : "Net Short USD"; }
 else cotProxy = dxyTrend.includes("UP") ? "Net Long USD" : "Net Short USD";
-const isUsdQuote = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD"].includes(user.pair);
+const isUsdQuote = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "XAUUSD", "XAGUSD"].includes(user.pair);
 const isUsdBase = ["USDJPY", "USDCHF", "USDCAD"].includes(user.pair);
 if (isUsdQuote) { if (dxyTrend.includes("UP")) macroScore -= 20; else macroScore += 20; if (us10yTrend.includes("UP")) macroScore -= 15; else macroScore += 15; }
 else if (isUsdBase) { if (dxyTrend.includes("UP")) macroScore += 20; else macroScore -= 20; if (us10yTrend.includes("UP")) macroScore += 15; else macroScore -= 15; }
@@ -1299,7 +1280,6 @@ if (user.pair === "XAUUSD") macroCtx += `Gold Real Yield Model: ${us10yTrend.inc
 const d = new Date(); const isNFP = d.getDate() <= 7 && d.getDay() === 5; const isFOMC = d.getDate() >= 13 && d.getDate() <= 15 && (d.getDay() === 2 || d.getDay() === 3); const isCPI = d.getDate() >= 10 && d.getDate() <= 13;
 macroCtx += `[ECO CALENDAR] `;
 if (isNFP) macroCtx += "NFP Week (High Volatility). "; else if (isFOMC) macroCtx += "FOMC Rate Decision Week. "; else if (isCPI) macroCtx += "CPI Inflation Data Week. "; else macroCtx += "Standard Macro Week. ";
-if (PAIRS.crypto.includes(user.pair)) macroCtx += `[ON-CHAIN] ETF Flow BTC proxy active. `;
 macroCtx += `[NEWS FEED] ${newsStr} `;
 macroCtx += `[AI SENTIMENT] ${sentimentAI.sentiment} (${sentimentAI.confidence}%). Reason: ${sentimentAI.reason}. `;
 if (env.DB) {
@@ -1633,7 +1613,7 @@ let lastTradeTxt = "N/A";
 if (env.DB) { try { const lastTrade = await env.DB.prepare("SELECT outcome, rr_hit FROM analytics WHERE user_id=? AND pair=? AND outcome != 'PENDING' ORDER BY timestamp DESC LIMIT 1").bind(user.id, user.pair).first(); if (lastTrade) lastTradeTxt = `${lastTrade.outcome} (${lastTrade.rr_hit > 0 ? "+" : ""}${lastTrade.rr_hit.toFixed(2)}R)`; } catch (e) {} }
 const tier = getTierLimits(env, user); const isPrem = tier.name.includes("Premium") || tier.name.includes("VIP") || isAdmin(env, user.id);
 await tgLoading(env, chatId, msgId, 70, "AI-1 analyzing market structure...");
-const isUsdQuote = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD"].includes(user.pair);
+const isUsdQuote = ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "XAUUSD", "XAGUSD"].includes(user.pair);
 const isUsdBase = ["USDJPY", "USDCHF", "USDCAD"].includes(user.pair);
 let pairContext = "";
 if (isUsdQuote) pairContext = `\nPERHATIAN: Untuk pair ${user.pair}, penguatan USD berarti BEARISH.`;
@@ -1786,7 +1766,7 @@ let finalRiskPct = Math.min(parseFloat(user.risk_pct) || 1, optRisk) / volaRiskM
 if (volaRiskMult > 1.5) mmWarn.push("High Volatility"); else if (volaRiskMult < 0.7) mmWarn.push("Low Volatility");
 const riskAmt = accNum * finalRiskPct / 100;
 let pipMult = 1e4, pipValPerLot = 10, contractSize = 1e5; const profile = getPairProfile(user.pair, price);
-if (profile.isJPY) { pipMult = 100; pipValPerLot = 1e3 / 150; } else if (profile.isXAU) { pipMult = 10; pipValPerLot = 10; contractSize = 100; } else if (profile.isCrypto) { pipMult = 1; pipValPerLot = 1; contractSize = 1; }
+if (profile.isJPY) { pipMult = 100; pipValPerLot = 1e3 / 150; } else if (profile.isXAU) { pipMult = 10; pipValPerLot = 10; contractSize = 100; }
 const pips = slD * pipMult; let lot = pips > 0 ? parseFloat((riskAmt / (pips * pipValPerLot)).toFixed(2)) : 0; lot = Math.min(lot, 100);
 const margin = lot > 0 ? lot * contractSize * price / leverage : 0;
 const sellSetup = getTradeSetup(price, atrV, "SELL", user.pair, ind.factors ? ind.factors.vol : 1, user.tf, Date.now(), false, ind.structState);
@@ -1826,7 +1806,7 @@ const injectionCheck = detectPromptInjection(text);
 if (injectionCheck.detected) { sysLog("WARN", traceId, "INJECTION_ATTEMPT", { user: user.id, pattern: injectionCheck.pattern, text: text.substring(0, 200) }); return tgSend(env, chatId, "Pesan ditolak: Terdeteksi pola manipulasi prompt (Security Policy).", aiKB); }
 if (!await checkQuotaD1(env, user.id)) return tgSend(env, chatId, "Limit harian AI tercapai.", aiKB);
 if (!await consumeEnergy(env, user, COSTS.CHAT, chatId)) return tgSend(env, chatId, "Energy tidak cukup.", { inline_keyboard: [[btn("🔋 Top Up", "store")]] });
-const tradingKeywords = ["buy", "sell", "trend", "market", "price", "harga", "analisa", "analysis", "chart", "tf", "timeframe", "support", "resistance", "smc", "ict", "fvg", "bos", "choch", "liquidity", "xau", "usd", "jpy", "gbp", "eur", "btc", "crypto", "forex", "saham", "stock", "indikator", "indicator", "rsi", "macd", "ema", "bb", "setup", "entry", "sl", "tp", "profit", "loss", "risk", "long", "short", "bull", "bear"];
+const tradingKeywords = ["buy", "sell", "trend", "market", "price", "harga", "analisa", "analysis", "chart", "tf", "timeframe", "support", "resistance", "smc", "ict", "fvg", "bos", "choch", "liquidity", "xau", "usd", "jpy", "gbp", "eur", "forex", "saham", "stock", "indikator", "indicator", "rsi", "macd", "ema", "bb", "setup", "entry", "sl", "tp", "profit", "loss", "risk", "long", "short", "bull", "bear"];
 const isTradingIntent = tradingKeywords.some((kw) => lowerText.includes(kw));
 let sysLock = "", temp = 0.4;
 if (isTradingIntent) {
@@ -2339,7 +2319,7 @@ try {
 const lastWfRun = await getKV(env, "last_wf_run"); const now = Date.now();
 if (!lastWfRun || (now - lastWfRun) > 6 * 3600 * 1000) {
 sysLog("INFO", "CRON", "START_WALK_FORWARD_BATCH");
-const topPairs = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"]; const tfs = ["15M", "1H", "4H"]; let computed = 0;
+const topPairs = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"]; const tfs = ["15M", "1H", "4H"]; let computed = 0;
 for (const pair of topPairs) { for (const tf of tfs) { try { const m = await getMarketData(env, pair, tf); if (m && m.c.length > 100) { const result = runWalkForwardValidation(m, pair, tf); await setKV(env, `bt:${pair}:${tf}`, result, 21600); computed++; } } catch (e) { sysLog("WARN", "CRON", "WF_FAIL", { pair, tf, err: e.message }); } } }
 await setKV(env, "last_wf_run", now, 21600); sysLog("INFO", "CRON", "WF_BATCH_DONE", { computed });
 }
@@ -2349,7 +2329,7 @@ const autoMode = await getKV(env, "auto_mode"); const lastAutoRun = await getKV(
 if (autoMode && (!lastAutoRun || (now - lastAutoRun) > TWO_HOURS)) {
 sysLog("INFO", "AUTO", "START_2H_CYCLE");
 const stats = await getGlobalStats(env);
-const scanPairs = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"];
+const scanPairs = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"];
 const scanTFs = ["15M", "1H"];
 let premiumUsers = []; if (env.DB) { try { const res = await env.DB.prepare("SELECT id FROM users WHERE premium=1 OR vip=1").all(); if (res && res.results) premiumUsers = res.results.map((u) => u.id); } catch (e) {} }
 const highConvictionSignals = []; const marketSummary = { buy: [], sell: [], total_scanned: 0 };
@@ -2368,7 +2348,7 @@ if (ind.signal === "BUY") marketSummary.buy.push(`${pair}/${tf}`);
 else if (ind.signal === "SELL") marketSummary.sell.push(`${pair}/${tf}`);
 
 const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct;
-if ((ind.signal === "BUY" || ind.signal === "SELL") && conf >= 60) {
+if ((ind.signal === "BUY" || ind.signal === "SELL") && conf >= 60 && (ind.quality === "A" || ind.quality === "A+" || ind.quality.includes("A"))) {
 const alertKey = `auto_alert:${pair}:${tf}:${ind.signal}`;
 const recentlyAlerted = await getKV(env, alertKey);
 if (!recentlyAlerted) {
