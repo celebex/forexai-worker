@@ -73,11 +73,13 @@ var QUOTES = [
 "Trade what you see, not what you feel."
 ];
 var DISCLAIMERS = [
-"DISCLAIMER: Ini HANYA ANALISA TEKNIKAL & MAKRO, bukan saran finansial pasti.",
-"PERINGATAN: Hasil analisa ini tidak menjamin profit 100%.",
-"LEGAL DISCLAIMER: Bot ini hanya alat bantu analisa.",
-"INFO PENTING: Trading berisiko tinggi.",
-"DISCLAIMER KERAS: Market selalu dinamis. Gunakan Stop Loss!"
+  "⚠️ DISCLAIMER: Ini HANYA ANALISA TEKNIKAL & MAKRO, bukan saran finansial pasti. Sinyal BISA BERUBAH sewaktu-waktu karena market dinamis.",
+  "⚠️ PERINGATAN: Hasil analisa ini tidak menjamin profit 100%. Analisa bersifat DINAMIS dan dapat berubah setiap saat.",
+  "⚠️ LEGAL DISCLAIMER: Bot ini hanya alat bantu analisa. Pengguna MEMAHAMI dan SETUJU bahwa semua keputusan trading adalah TANGGUNG JAWAB PENUH pengguna.",
+  "⚠️ BEBAS TUNTUTAN: Pengguna melepaskan hak tuntutan hukum terhadap pengembang/bot ini. Trading berisiko, kerugian adalah tanggung jawab pengguna.",
+  "⚠️ DISCLAIMER KERAS: Market selalu dinamis. Sinyal dapat BERUBAH KAPAN SAJA. Selalu gunakan Stop Loss! Tidak ada jaminan profit.",
+  "⚠️ LIABILITAS: Bot ini disediakan \"AS IS\" tanpa jaminan apapun. Pengembang TIDAK BERTANGGUNG JAWAB atas kerugian finansial apapun.",
+  "⚠️ ANALISA BERUBAH: Sinyal dan analisa ini DAPAT BERUBAH mendadak sesuai kondisi market. Selalu verifikasi ulang sebelum entry."
 ];
 var WALLETS = {
 EVM: "0x3ced669b7e4181dd291eceac87e35c9a07e19528",
