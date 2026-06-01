@@ -895,6 +895,10 @@ return state;
 }
 function calculatePosteriorProbability(assetClass, struct, regimeVec, macroScore) {
 let prior = 0.5 + macroScore / 100 * 0.2;
+// Trend-based prior adjustment (proportional, not just threshold)
+const trendStrength = regimeVec.trend - regimeVec.range;
+if (trendStrength > 0.1) prior += trendStrength * 0.3 * (struct.bias === "BEARISH" ? -1 : 1);
+else if (trendStrength < -0.1) prior += trendStrength * 0.3 * (struct.bias === "BULLISH" ? -1 : 1);
 if (regimeVec.trend > 0.6) prior += struct.bias === "BULLISH" ? 0.15 : -0.15;
 prior = Math.max(0.1, Math.min(0.9, prior));
 let likelihoodRatio = 1;
@@ -1179,6 +1183,19 @@ if (f_trend > 0.3) techScore += 12;
 if (f_trend > 0.6) techScore += 15;
 if (f_trend < -0.3) techScore -= 12;
 if (f_trend < -0.6) techScore -= 15;
+// RSI contribution
+if (rsiV > 65) techScore += 8;
+if (rsiV > 75) techScore += 5;
+if (rsiV < 35) techScore -= 8;
+if (rsiV < 25) techScore -= 5;
+// BB contribution (price vs BB band)
+const bbMid = (bbV.upper + bbV.lower) / 2;
+const bbRange = bbV.upper - bbV.lower;
+if (bbRange > 0) {
+  const bbPos = (price - bbV.lower) / bbRange;
+  if (bbPos > 0.8) techScore += 6;
+  if (bbPos < 0.2) techScore -= 6;
+}
 // instMACD only counted if volume reliable (it's volume-weighted)
 if (volumeReliable) {
   if (instMACD.bias === "🟢 BULLISH") techScore += 10;
