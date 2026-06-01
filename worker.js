@@ -35,7 +35,7 @@ cross: ["EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "CADJPY", "CHFJPY", "EURAUD", "G
 xau: ["XAUUSD", "XAGUSD", "UKOIL", "USOIL"],
 crypto: ["BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "ADAUSD", "DOGEUSD", "LTCUSD", "LINKUSD", "DOTUSD", "BCHUSD"]
 };
-var ALL_PAIRS = [...PAIRS.mayor, ...PAIRS.cross, ...PAIRS.xau, ...PAIRS.crypto];
+var ALL_PAIRS = [...PAIRS.mayor, ...PAIRS.cross, ...PAIRS.xau];
 var YAHOO = {
 EURUSD: "EURUSD=X", GBPUSD: "GBPUSD=X", USDJPY: "JPY=X", USDCHF: "CHF=X",
 USDCAD: "CAD=X", AUDUSD: "AUDUSD=X", NZDUSD: "NZDUSD=X", EURGBP: "EURGBP=X",
