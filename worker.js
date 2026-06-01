@@ -2266,11 +2266,6 @@ if (path === "/api/prices") {
       NZDUSD: r.NZD ? Math.round(1 / r.NZD * 1e5) / 1e5 : null
     };
   } catch (e) { result.forex = { error: e.message }; }
-  try {
-    const gRes = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", { headers: { "User-Agent": "ForexAI/2.0" }, signal: AbortSignal.timeout(8000) });
-    const gData = await gRes.json();
-    result.gold = { XAUUSD: Math.round(parseFloat(gData.price) * 100) / 100 };
-  } catch (e) { result.gold = { error: e.message }; }
   const xau = await fetchStooqSingle("xauusd");
   if (xau) result.xau_spot = xau;
   const xag = await fetchStooqSingle("xagusd");
