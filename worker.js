@@ -827,7 +827,7 @@ var findFractals = (h, l, n = 2) => { let highs = [], lows = []; for (let i = n;
 var calcTrendFactor = (price, e20, e50, vwap, atr) => { const zEma = Math.max(-3, Math.min(3, (price - e50) / (atr || 1))) / 3; const zVwap = Math.max(-3, Math.min(3, (price - vwap) / (atr || 1))) / 3; const emaSlope = (e20 - e50) / (e50 || 1); const zSlope = Math.max(-1, Math.min(1, emaSlope * 100)); return zEma * 0.4 + zVwap * 0.4 + zSlope * 0.2; };
 var calcVolatilityFactor = (bbW, bbwNorm, atr, price) => { const relBbw = bbW / (bbwNorm || 0.1); const atrPct = atr / price; return Math.max(0.1, Math.min(3, relBbw * 0.5 + atrPct * 100 * 0.5)); };
 var calcRegimeVector = (trendFactor, volFactor) => { const absTrend = Math.abs(trendFactor); const trendProb = Math.min(1, absTrend * 1.5); const volProb = Math.min(1, Math.max(0, volFactor - 1)); const rangeProb = Math.max(0, 1 - trendProb - volProb); const sum = trendProb + volProb + rangeProb; return { trend: trendProb / sum, range: rangeProb / sum, volatile: volProb / sum }; };
-function getAssetClass(pair) { if (pair === "XAUUSD") return "XAU"; if (pair === "XAGUSD") return "XAG"; if (PAIRS.xau.includes(pair)) return "XAU"; return "FOREX"; }
+function getAssetClass(pair) { if (pair === "XAUUSD") return "XAU"; if (pair === "XAGUSD") return "XAG"; if (PAIRS.xau.includes(pair)) return "OIL"; return "FOREX"; }
 var calcMarketPhysics = (c) => {
     if (c.length < 5) return { velocity: 0, acceleration: 0, exhaustion: false };
     const v1 = c[c.length - 1] - c[c.length - 2];
@@ -1229,7 +1229,7 @@ const supertrendV = calcSuperTrendFlat(h, l, c, 10, 3, atrV);
 const vsaV = detectVSABars(h, l, c, v, atrV);
 const regSlopeV = calcRegSlope(c, 20);
 const adrLimitV = checkADRBoundaries(price, dailyHigh, dailyLow, adrVal);
-let res = { rsiV, atrV, bbV, vwapV, regime: primaryRegime, regimeVec, factors: { trend: f_trend, vol: f_vol, struct: structState.structScore, liq: structState.sweepDetected ? 1 : 0 }, structState, volatility: f_vol > 1.5 ? "HIGH" : f_vol < 0.5 ? "LOW" : "NORMAL", bullPct, signal, quality, riskLvl: f_vol > 2 ? "HIGH" : "NORMAL", price, reasons, bt: btResult || { exp: 0, wr: 0, pf: 0, maxDd: 0, total: 0, sharpe: 0, calmar: 0, robustnessScore: 0 }, supertrendV, vsaV, regSlopeV, adrLimitV, adrVal };
+let res = { rsiV, atrV, bbV, vwapV: safeVwap, vwapRaw, volumeReliable, regime: primaryRegime, regimeVec, factors: { trend: f_trend, vol: f_vol, struct: structState.structScore, liq: structState.sweepDetected ? 1 : 0 }, structState, volatility: f_vol > 1.5 ? "HIGH" : f_vol < 0.5 ? "LOW" : "NORMAL", bullPct, signal, quality, riskLvl: f_vol > 2 ? "HIGH" : "NORMAL", price, reasons, bt: btResult || { exp: 0, wr: 0, pf: 0, maxDd: 0, total: 0, sharpe: 0, calmar: 0, robustnessScore: 0 }, supertrendV, vsaV, regSlopeV, adrLimitV, adrVal };
 if (full) res.srV = calcSR(h, l);
 return res;
 }
@@ -1563,10 +1563,12 @@ if (macro.maxNewsWeight >= 8 && macro.minsToNews < 120) {
 // Macro conflict filter: block signal if macro regime strongly opposes
 if (signal === "BUY" && macro.macroScore <= -25) {
   signal = "WAIT"; quality = "C (Macro Conflict)";
+  bullPct = Math.min(bullPct, 55);
   ind.reasons.push("Macro Filter: BUY conflicts with DXY/Yield regime");
 }
 if (signal === "SELL" && macro.macroScore >= 25) {
   signal = "WAIT"; quality = "C (Macro Conflict)";
+  bullPct = Math.max(bullPct, 45);
   ind.reasons.push("Macro Filter: SELL conflicts with DXY/Yield regime");
 }
 const sessionInfo = { name: sessionResult.sessionName, desc: sessionResult.sessionDesc, bias: sessionResult.sessionBias };
