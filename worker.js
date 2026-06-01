@@ -986,18 +986,6 @@ const degradation = isMetrics.exp > 0 ? (isMetrics.exp - oosMetrics.exp) / isMet
 const isOverfit = degradation > 0.5; const robustnessScore = Math.max(0, 100 - degradation * 100);
 return { ...oosMetrics, isOverfit, robustnessScore: robustnessScore.toFixed(0) };
 };
-async function fetchTwelveData(env, pair, tf) {
-if (!env.TWELVEDATA_API_KEY) throw new Error("No TwelveData API Key");
-const intvMap = { "5M": "5min", "15M": "15min", "30M": "30min", "1H": "1h", "4H": "4h", "1D": "1day" };
-const intv = intvMap[tf] || "15min"; let sym = pair;
-if (pair.length === 6 && pair !== "UKOIL" && pair !== "USOIL") sym = pair.substring(0, 3) + "/" + pair.substring(3, 6);
-else if (pair === "UKOIL") sym = "BRENT"; else if (pair === "USOIL") sym = "WTI";
-const controller = new AbortController(); const id = setTimeout(() => controller.abort(), 8e3);
-const res = await fetch(`https://api.twelvedata.com/time_series?symbol=${sym}&interval=${intv}&outputsize=200&apikey=${env.TWELVEDATA_API_KEY}`, { signal: controller.signal });
-clearTimeout(id); if (!res.ok) throw new Error(`TwelveData HTTP ${res.status}`);
-const data = await res.json(); if (data.status === "error" || !data.values) throw new Error(data.message || "TwelveData error");
-return data.values.reverse().map((d) => ({ t: new Date(d.datetime).getTime() / 1e3, o: parseFloat(d.open), h: parseFloat(d.high), l: parseFloat(d.low), c: parseFloat(d.close), v: parseFloat(d.volume || 0) }));
-}
 const STOOQ_PAIRS = {
   major: [
     ["EUR/USD", "eurusd", 5], ["GBP/USD", "gbpusd", 5], ["USD/JPY", "usdjpy", 2],
@@ -1132,11 +1120,6 @@ const fetchers = [
 async () => { await checkCircuitBreakerD1(env, "yahoo"); try { return await fetchYahoo(sym, tf, "query1"); } catch (e) { await tripCircuitBreakerD1(env, "yahoo", 30); throw e; } },
 async () => { await checkCircuitBreakerD1(env, "yahoo"); try { return await fetchYahoo(sym, tf, "query2"); } catch (e) { await tripCircuitBreakerD1(env, "yahoo", 30); throw e; } }
 ];
-if (env.TWELVEDATA_API_KEY) {
-  const tdFetcher = async () => { await checkCircuitBreakerD1(env, "twelvedata"); try { return await fetchTwelveData(env, pair, tf); } catch (e) { await tripCircuitBreakerD1(env, "twelvedata", 30); throw e; } };
-  if (PAIRS.xau.includes(pair)) fetchers.unshift(tdFetcher);
-  else fetchers.push(tdFetcher);
-}
 try { rawCandles = await Promise.any(fetchers.map(async (fetcher) => { const res = await fetcher(); if (!res || res.length < 50) throw new Error("Insufficient data"); return res; })); }
 catch (e) { sysLog("WARN", "N/A", "ERR_MARKET_FETCH", { pair, tf, error: "All fetchers failed" }); }
 if (!rawCandles || rawCandles.length < 50) return null;
@@ -2528,7 +2511,7 @@ await setKV(env, "last_auto_run", now, 7200); sysLog("INFO", "AUTO", "CYCLE_COMP
 }
 } catch (e) { sysLog("ERROR", "AUTO", "ERR_AUTO_MODE_CRON", { err: e.message }); }
 if (!adminId) return;
-let alerts = []; const services = ["yahoo", "binance", "twelvedata", "deepseek", "groq", "nim", "cf"];
+let alerts = []; const services = ["yahoo", "deepseek", "groq", "nim", "cf"];
 for (const s of services) { const key = `cb:${s}`; try { const res = await env.DB.prepare("SELECT value FROM app_state WHERE key = ? AND expires_at > ?").bind(key, Date.now()).first(); if (res?.value === "1" || res?.value === 1) alerts.push(`${s.toUpperCase()} circuit breaker active!`); } catch (e) {} }
 if (alerts.length > 0) { const alertKey = `admin_api_alert_${Math.floor(Date.now() / 36e5)}`; const alreadyAlerted = await getKV(env, alertKey); if (!alreadyAlerted) { await setKV(env, alertKey, true, 3600); await tgSend(env, adminId, `<b>SYSTEM ALERT</b>\n${alerts.join("\n")}`); } }
 })());
