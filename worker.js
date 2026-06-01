@@ -500,11 +500,11 @@ const limits = getTierLimits(env, row);
 const msPerDay = 864e5;
 const daysPassed = (Date.now() - row.last_regen) / msPerDay;
 if (daysPassed >= 1) { const daysToRegen = Math.floor(daysPassed); regenAmount = daysToRegen * limits.regen; row.last_regen += daysToRegen * msPerDay; needsUpdate = true; }
-if (row.state.startsWith("wait_tf_")) {
+if (row.state.startsWith("wait_tf_") || row.state.startsWith("wait_crypto_tx")) {
 const parts = row.state.split("_"); const ts2 = parseInt(parts[parts.length - 1] || "0");
 if (ts2 > 0 && Date.now() - ts2 > 15 * 60 * 1e3) { row.state = "main"; needsUpdate = true; }
 } else if (row.state === "pending_approval" && Date.now() - row.last_active > 30 * 60 * 1e3) { row.state = "main"; needsUpdate = true; }
-else if (row.state !== "main" && !row.state.startsWith("wait_tf_") && row.state !== "pending_approval" && Date.now() - row.last_active > 36e5) { row.state = "main"; needsUpdate = true; }
+else if (row.state !== "main" && !row.state.startsWith("wait_tf_") && !row.state.startsWith("wait_crypto_tx") && row.state !== "pending_approval" && Date.now() - row.last_active > 36e5) { row.state = "main"; needsUpdate = true; }
 if (needsUpdate && env.DB) {
 try {
 if (regenAmount > 0) {
@@ -834,7 +834,7 @@ var findFractals = (h, l, n = 2) => { let highs = [], lows = []; for (let i = n;
 var calcTrendFactor = (price, e20, e50, vwap, atr) => { const zEma = Math.max(-3, Math.min(3, (price - e50) / (atr || 1))) / 3; const zVwap = Math.max(-3, Math.min(3, (price - vwap) / (atr || 1))) / 3; const emaSlope = (e20 - e50) / (e50 || 1); const zSlope = Math.max(-1, Math.min(1, emaSlope * 100)); return zEma * 0.4 + zVwap * 0.4 + zSlope * 0.2; };
 var calcVolatilityFactor = (bbW, bbwNorm, atr, price) => { const relBbw = bbW / (bbwNorm || 0.1); const atrPct = atr / price; return Math.max(0.1, Math.min(3, relBbw * 0.5 + atrPct * 100 * 0.5)); };
 var calcRegimeVector = (trendFactor, volFactor) => { const absTrend = Math.abs(trendFactor); const trendProb = Math.min(1, absTrend * 1.5); const volProb = Math.min(1, Math.max(0, volFactor - 1)); const rangeProb = Math.max(0, 1 - trendProb - volProb); const sum = trendProb + volProb + rangeProb; return { trend: trendProb / sum, range: rangeProb / sum, volatile: volProb / sum }; };
-function getAssetClass(pair) { if (PAIRS.xau.includes(pair)) return "XAU"; if (PAIRS.crypto.includes(pair)) return "CRYPTO"; return "FOREX"; }
+function getAssetClass(pair) { if (pair === "XAUUSD") return "XAU"; if (pair === "XAGUSD") return "XAG"; if (PAIRS.xau.includes(pair)) return "XAU"; if (PAIRS.crypto.includes(pair)) return "CRYPTO"; return "FOREX"; }
 var calcMarketPhysics = (c) => {
     if (c.length < 5) return { velocity: 0, acceleration: 0, exhaustion: false };
     const v1 = c[c.length - 1] - c[c.length - 2];
@@ -921,10 +921,11 @@ const slippage = atrV * 0.05 * macroRiskFactor;
 let riskFactor = Math.max(0.75, Math.min(2.75, f_vol * macroRiskFactor));
 if (assetClass === "CRYPTO") riskFactor *= 1.2;
 if (assetClass === "XAU" && structState && structState.sweepDetected) riskFactor *= 0.8;
+if (assetClass === "XAG") riskFactor *= 1.1;
 const atrValid = (typeof atrV === "number" && isFinite(atrV) && atrV > 0) ? atrV : (price * 0.01);
 let slD = atrValid * profile.baseSlMult * riskFactor;
 const minSL = Math.max(atrValid * 0.8, spreadEst * 3);
-const maxSL = assetClass === "CRYPTO" ? atrValid * 5 : assetClass === "XAU" ? atrValid * 4 : atrValid * 3.5;
+const maxSL = assetClass === "CRYPTO" ? atrValid * 5 : assetClass === "XAU" ? atrValid * 4 : assetClass === "XAG" ? atrValid * 4 : atrValid * 3.5;
 slD = Math.max(minSL, Math.min(maxSL, slD));
 const entry = isBuy ? price + spreadEst + slippage : price - spreadEst - slippage;
 const sl = isBuy ? entry - slD : entry + slD;
@@ -1165,9 +1166,14 @@ const { o, h, l, c, v } = m;
 const e20Arr = emaArr(c, 20), e50Arr = emaArr(c, 50);
 const e20 = e20Arr[e20Arr.length - 1], e50 = e50Arr[e50Arr.length - 1];
 const rsiV = calcRSI(c), atrV = calcATR(h, l, c);
-const bbV = calcBB(c); const vwapV = calcVWAP(h, l, c, v);
+const bbV = calcBB(c); const vwapRaw = calcVWAP(h, l, c, v);
 const price = c[c.length - 1]; const profile = getPairProfile(pair, price); const assetClass = getAssetClass(pair);
-const f_trend = calcTrendFactor(price, e20, e50, vwapV, atrV);
+// Volume reliability check BEFORE trend factor
+const recentVol = v.slice(-10).reduce((a, b) => a + (b || 0), 0) / 10;
+const longVol = v.slice(-50).reduce((a, b) => a + (b || 0), 0) / Math.min(50, v.length);
+const volumeReliable = longVol > 0 && recentVol > longVol * 0.3;
+const safeVwap = volumeReliable ? vwapRaw : e20;
+const f_trend = calcTrendFactor(price, e20, e50, safeVwap, atrV);
 const f_vol = calcVolatilityFactor(bbV.bw, profile.bbwNorm, atrV, price);
 const regimeVec = calcRegimeVector(f_trend, f_vol);
 const physics = calcMarketPhysics(c);
@@ -1180,11 +1186,7 @@ if (full && btResult && btResult.isOverfit) macroScore -= 10;
 const posteriorProb = calculatePosteriorProbability(assetClass, structState, regimeVec, macroScore);
 let bullPct = Math.round(posteriorProb * 100);
 const primaryRegime = regimeVec.trend > 0.5 ? "TRENDING" : regimeVec.volatile > 0.4 ? "VOLATILE" : "RANGING";
-let reasons = []; 
-// Volume reliability: compare recent volume avg vs longer-term avg
-const recentVol = v.slice(-10).reduce((a, b) => a + (b || 0), 0) / 10;
-const longVol = v.slice(-50).reduce((a, b) => a + (b || 0), 0) / Math.min(50, v.length);
-const volumeReliable = longVol > 0 && recentVol > longVol * 0.3;
+let reasons = [];
 
 let techScore = 0;
 if (f_trend > 0.3) techScore += 12;
@@ -1327,7 +1329,8 @@ var analysisKB = { keyboard: [[rBtn("🔄 Analisa Ulang"), rBtn("📈 Semua Indi
 var scanMenuKB = { keyboard: [[rBtn("🔍 Scan Mayor"), rBtn("🔍 Scan Cross")], [rBtn("🔍 Scan XAU")], [rBtn("🔍 Scan Semua"), rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var aiKB = { keyboard: [[rBtn("🧹 Clear Memory"), rBtn("🚪 Keluar Terminal")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var adminKB = { keyboard: [[rBtn("🔄 Toggle On/Off"), rBtn("🤖 Auto Mode")], [rBtn("❤️ Check Health"), rBtn("🔑 Check API")], [rBtn("👥 Check Users"), rBtn("💳 Info Topup")], [rBtn("🎁 Send Energy/Tier"), rBtn("📢 Broadcast")], [rBtn("🔄 Refresh Bot"), rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
-var storeKB = { inline_keyboard: [[btn("⚡ 50 Energy (Rp 50k / $3.5)", "buy_qris_50"), btn("⚡ 120 Energy (Rp 100k / $6.5)", "buy_qris_120")], [btn("⚡ 300 Energy (Rp 200k / $13)", "buy_qris_300"), btn("⚡ 800 Energy (Rp 400k / $26)", "buy_qris_800")], [btn("💎 Premium 30 Hari (Rp 300k / $20)", "buy_qris_prem")], [btn("👑 VIP 30 Hari (Rp 500k / $33)", "buy_qris_vip")], [btn("📥 CONTACT Admin (Inbox)", "contact_admin")], [btn("🏠 Home", "home")]] };
+var storeKB = { inline_keyboard: [[btn("⚡ 50 Energy (Rp 50k / $3.5)", "buy_qris_50"), btn("⚡ 120 Energy (Rp 100k / $6.5)", "buy_qris_120")], [btn("⚡ 300 Energy (Rp 200k / $13)", "buy_qris_300"), btn("⚡ 800 Energy (Rp 400k / $26)", "buy_qris_800")], [btn("💎 Premium 30 Hari (Rp 300k / $20)", "buy_qris_prem")], [btn("👑 VIP 30 Hari (Rp 500k / $33)", "buy_qris_vip")], [btn("🪙 Pay via Crypto (USDT/USDC)", "buy_crypto_menu")], [btn("📥 CONTACT Admin (Inbox)", "contact_admin")], [btn("🏠 Home", "home")]] };
+var cryptoMenuKB = { inline_keyboard: [[btn("🌐 USDT/USDC (EVM / ERC20 / BEP20)", "buy_crypto_evm")], [btn("☀️ USDT/USDC (Solana)", "buy_crypto_sol")], [btn("🏠 Home", "home")]] };
 
 function getNewsExplanation(title) { const t = title.toUpperCase(); for (const key of Object.keys(NEWS_WEIGHTS)) if (t.includes(key)) return "Berita berdampak tinggi. Waspada lonjakan volatilitas pada pair terkait."; return "Berita berdampak tinggi. Waspada lonjakan volatilitas pada pair terkait."; }
 async function showNews(env, user, chatId, msgId, page) {
@@ -1576,6 +1579,15 @@ if (macro.maxNewsWeight >= 8 && macro.minsToNews < 120) {
   if (signal === "SELL" && bullPct > 45) {
     signal = "WAIT"; quality = "C (Downgraded)";
   }
+}
+// Macro conflict filter: block signal if macro regime strongly opposes
+if (signal === "BUY" && macro.macroScore <= -25) {
+  signal = "WAIT"; quality = "C (Macro Conflict)";
+  ind.reasons.push("Macro Filter: BUY conflicts with DXY/Yield regime");
+}
+if (signal === "SELL" && macro.macroScore >= 25) {
+  signal = "WAIT"; quality = "C (Macro Conflict)";
+  ind.reasons.push("Macro Filter: SELL conflicts with DXY/Yield regime");
 }
 const sessionInfo = { name: sessionResult.sessionName, desc: sessionResult.sessionDesc, bias: sessionResult.sessionBias };
 const mtfData = await Promise.all(["15M", "1H", "4H"].map(async (t) => { if (t === user.tf) return { tf: t, regime: regime.split(" ")[0], signal, confidence: bullPct }; const mData = await getMarketData(env, user.pair, t); if (!mData) return { tf: t, regime: "N/A", signal: "N/A", confidence: 0 }; const iData = await getCachedIndicators(env, mData, user.pair, t, false, stats); const conf = iData.signal === "SELL" ? 100 - iData.bullPct : iData.bullPct; return { tf: t, regime: iData.regime.split(" ")[0], signal: iData.signal, confidence: conf }; }));
@@ -1966,6 +1978,16 @@ Pilih kategori:</pre>`, scanMenuKB),
 };
 if (exactActions[data]) return exactActions[data]();
 
+if (data === "buy_crypto_menu") return tgEdit(env, chatId, msgId, "<b>Select Crypto Network:</b>", cryptoMenuKB);
+if (data === "buy_crypto_evm" || data === "buy_crypto_sol") {
+const isEVM = data === "buy_crypto_evm"; const wallet = isEVM ? WALLETS.EVM : WALLETS.SOL; const network = isEVM ? "EVM" : "Solana";
+const txt = `<b>CRYPTO PAYMENTS (${network})</b>
+Send USDT/USDC to:
+<code>${wallet}</code>
+Kirim <b>TxHash</b> setelah transfer.`;
+await setUser(env, user.id, { state: "wait_crypto_tx" });
+return tgEdit(env, chatId, msgId, txt, { inline_keyboard: [[btn("🏠 Home", "home")]] });
+}
 if (data === "contact_admin") { await setUser(env, user.id, { state: "contact_admin" }); return tgEdit(env, chatId, msgId, `<b>Contact ADMIN</b>\nKetik pesan Anda.\n<i>/cancel untuk batal.</i>`, { inline_keyboard: [[btn("🏠 Home", "home")]] }); }
 if (data.startsWith("reply_user_")) { if (!isAdmin(env, user.id)) throw new Error("AKSES_DITOLAK"); const targetId = data.replace("reply_user_", ""); await setUser(env, user.id, { state: `replying_${targetId}` }); return tgSend(env, chatId, `Balas User ID <code>${targetId}</code>:
 <i>/cancel untuk batal.</i>`); }
@@ -2251,6 +2273,15 @@ for (let i = 0; i < users.length; i += batchSize) { const batch = users.slice(i,
 await setUser(env, user.id, { state: "main" }); await tgSend(env, chatId, `Broadcast ke ${count} users.`); return;
 }
 
+if (user.state === "wait_crypto_tx") {
+if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Dibatalkan.", getMainKB(isAdmin(env, user.id))); }
+const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
+if (!adminId) return tgSend(env, chatId, "Admin belum diatur.");
+let adminMsg = `<b>CRYPTO PAYMENT</b>\nUser: @${esc(user.username || "NoUsername")}\nID: <code>${user.id}</code>\n`;
+if (msg.photo) { adminMsg += `Bukti terlampir.`; await tgPost(env, "sendPhoto", { chat_id: adminId, photo: msg.photo[msg.photo.length - 1].file_id, caption: adminMsg, parse_mode: "HTML", reply_markup: { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] } }); }
+else { adminMsg += `TxHash: ${esc(text)}`; await tgSend(env, adminId, adminMsg, { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] }); }
+await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Bukti dikirim ke Admin.", getMainKB(isAdmin(env, user.id)));
+}
 if (user.state === "contact_admin") {
 if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Dibatalkan."); }
 const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
