@@ -500,11 +500,11 @@ const limits = getTierLimits(env, row);
 const msPerDay = 864e5;
 const daysPassed = (Date.now() - row.last_regen) / msPerDay;
 if (daysPassed >= 1) { const daysToRegen = Math.floor(daysPassed); regenAmount = daysToRegen * limits.regen; row.last_regen += daysToRegen * msPerDay; needsUpdate = true; }
-if (row.state.startsWith("wait_tf_") || row.state.startsWith("wait_crypto_tx")) {
+if (row.state.startsWith("wait_tf_")) {
 const parts = row.state.split("_"); const ts2 = parseInt(parts[parts.length - 1] || "0");
 if (ts2 > 0 && Date.now() - ts2 > 15 * 60 * 1e3) { row.state = "main"; needsUpdate = true; }
 } else if (row.state === "pending_approval" && Date.now() - row.last_active > 30 * 60 * 1e3) { row.state = "main"; needsUpdate = true; }
-else if (row.state !== "main" && !row.state.startsWith("wait_tf_") && !row.state.startsWith("wait_crypto_tx") && row.state !== "pending_approval" && Date.now() - row.last_active > 36e5) { row.state = "main"; needsUpdate = true; }
+else if (row.state !== "main" && !row.state.startsWith("wait_tf_") && row.state !== "pending_approval" && Date.now() - row.last_active > 36e5) { row.state = "main"; needsUpdate = true; }
 if (needsUpdate && env.DB) {
 try {
 if (regenAmount > 0) {
@@ -1320,15 +1320,15 @@ var chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => 
 var sigLabel = (s) => s === "BUY" ? "🟢 [BUY]" : s === "SELL" ? "🔴 [SELL]" : "🟡 [WAIT]";
 var biasBar = (pct) => `${"=".repeat(Math.round(pct / 10))}${".".repeat(10 - Math.round(pct / 10))} ${pct}%`;
 var KB_BACK_HOME = { keyboard: [[rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
-var getMainKB = (isAdminFlag) => { const kb = [[rBtn("🔋 Charge Energi")], [rBtn("📈 Mayor Forex"), rBtn("🔀 Cross Forex")], [rBtn("🏆 XAU & Komoditas"), rBtn("🪙 Crypto")], [rBtn("🔍 Market Scan"), rBtn("📊 MTF Analysis")], [rBtn("📰 Market News"), rBtn("🛡️ Risk Setup")], [rBtn("🤖 AI Terminal"), rBtn("👥 Referral")]]; if (isAdminFlag) kb.push([rBtn("⚙️ Admin Panel")]); return { keyboard: kb, resize_keyboard: true, is_persistent: true }; };
+var getMainKB = (isAdminFlag) => { const kb = [[rBtn("🔋 Charge Energi")], [rBtn("📈 Mayor Forex"), rBtn("🔀 Cross Forex")], [rBtn("🏆 XAU & Komoditas")], [rBtn("🔍 Market Scan"), rBtn("📊 MTF Analysis")], [rBtn("📰 Market News"), rBtn("🛡️ Risk Setup")], [rBtn("🤖 AI Terminal"), rBtn("👥 Referral")]]; if (isAdminFlag) kb.push([rBtn("⚙️ Admin Panel")]); return { keyboard: kb, resize_keyboard: true, is_persistent: true }; };
 var buildPairKB = (list) => ({ keyboard: [...chunk(list, 2).map((r) => r.map((p) => rBtn(p))), [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true });
 var tfKB = { keyboard: [[rBtn("⏱️ 5 Menit"), rBtn("⏱️ 15 Menit"), rBtn("⏱️ 30 Menit")], [rBtn("⏱️ 1 Jam"), rBtn("⏱️ 4 Jam")], [rBtn("📊 Lihat MTF Analysis")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var analysisKB = { keyboard: [[rBtn("🔄 Analisa Ulang"), rBtn("📈 Semua Indikator")], [rBtn("🛡️ Risk Setup"), rBtn("🔍 Scan Pasar")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
-var scanMenuKB = { keyboard: [[rBtn("🔍 Scan Mayor"), rBtn("🔍 Scan Cross")], [rBtn("🔍 Scan XAU"), rBtn("🔍 Scan Crypto")], [rBtn("🔍 Scan Semua"), rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
+var scanMenuKB = { keyboard: [[rBtn("🔍 Scan Mayor"), rBtn("🔍 Scan Cross")], [rBtn("🔍 Scan XAU")], [rBtn("🔍 Scan Semua"), rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var aiKB = { keyboard: [[rBtn("🧹 Clear Memory"), rBtn("🚪 Keluar Terminal")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var adminKB = { keyboard: [[rBtn("🔄 Toggle On/Off"), rBtn("🤖 Auto Mode")], [rBtn("❤️ Check Health"), rBtn("🔑 Check API")], [rBtn("👥 Check Users"), rBtn("💳 Info Topup")], [rBtn("🎁 Send Energy/Tier"), rBtn("📢 Broadcast")], [rBtn("🔄 Refresh Bot"), rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
-var storeKB = { inline_keyboard: [[btn("⚡ 50 Energy (Rp 50k / $3.5)", "buy_qris_50"), btn("⚡ 120 Energy (Rp 100k / $6.5)", "buy_qris_120")], [btn("⚡ 300 Energy (Rp 200k / $13)", "buy_qris_300"), btn("⚡ 800 Energy (Rp 400k / $26)", "buy_qris_800")], [btn("💎 Premium 30 Hari (Rp 300k / $20)", "buy_qris_prem")], [btn("👑 VIP 30 Hari (Rp 500k / $33)", "buy_qris_vip")], [btn("🪙 Pay via Crypto (USDT/USDC)", "buy_crypto_menu")], [btn("📥 CONTACT Admin (Inbox)", "contact_admin")], [btn("🏠 Home", "home")]] };
-var cryptoMenuKB = { inline_keyboard: [[btn("🌐 USDT/USDC (EVM / ERC20 / BEP20)", "buy_crypto_evm")], [btn("☀️ USDT/USDC (Solana)", "buy_crypto_sol")], [btn("🏠 Home", "home")]] };
+var storeKB = { inline_keyboard: [[btn("⚡ 50 Energy (Rp 50k / $3.5)", "buy_qris_50"), btn("⚡ 120 Energy (Rp 100k / $6.5)", "buy_qris_120")], [btn("⚡ 300 Energy (Rp 200k / $13)", "buy_qris_300"), btn("⚡ 800 Energy (Rp 400k / $26)", "buy_qris_800")], [btn("💎 Premium 30 Hari (Rp 300k / $20)", "buy_qris_prem")], [btn("👑 VIP 30 Hari (Rp 500k / $33)", "buy_qris_vip")], [btn("📥 CONTACT Admin (Inbox)", "contact_admin")], [btn("🏠 Home", "home")]] };
+
 function getNewsExplanation(title) { const t = title.toUpperCase(); for (const key of Object.keys(NEWS_WEIGHTS)) if (t.includes(key)) return "Berita berdampak tinggi. Waspada lonjakan volatilitas pada pair terkait."; return "Berita berdampak tinggi. Waspada lonjakan volatilitas pada pair terkait."; }
 async function showNews(env, user, chatId, msgId, page) {
 const news = await fetchForexFactoryNews(env);
@@ -1965,16 +1965,7 @@ Pilih kategori:</pre>`, scanMenuKB),
 "ai_clear": async () => { await doSession(env, user.id, "clearChat"); throw new Error("CLEAR_MEMORI"); }
 };
 if (exactActions[data]) return exactActions[data]();
-if (data === "buy_crypto_menu") return tgEdit(env, chatId, msgId, "<b>Select Crypto Network:</b>", cryptoMenuKB);
-if (data === "buy_crypto_evm" || data === "buy_crypto_sol") {
-const isEVM = data === "buy_crypto_evm"; const wallet = isEVM ? WALLETS.EVM : WALLETS.SOL; const network = isEVM ? "EVM" : "Solana";
-const txt = `<b>CRYPTO PAYMENTS (${network})</b>
-Send USDT/USDC to:
-<code>${wallet}</code>
-Kirim <b>TxHash</b> setelah transfer.`;
-await setUser(env, user.id, { state: "wait_crypto_tx" });
-return tgEdit(env, chatId, msgId, txt, { inline_keyboard: [[btn("🏠 Home", "home")]] });
-}
+
 if (data === "contact_admin") { await setUser(env, user.id, { state: "contact_admin" }); return tgEdit(env, chatId, msgId, `<b>Contact ADMIN</b>\nKetik pesan Anda.\n<i>/cancel untuk batal.</i>`, { inline_keyboard: [[btn("🏠 Home", "home")]] }); }
 if (data.startsWith("reply_user_")) { if (!isAdmin(env, user.id)) throw new Error("AKSES_DITOLAK"); const targetId = data.replace("reply_user_", ""); await setUser(env, user.id, { state: `replying_${targetId}` }); return tgSend(env, chatId, `Balas User ID <code>${targetId}</code>:
 <i>/cancel untuk batal.</i>`); }
@@ -2050,7 +2041,6 @@ const REPLY_MAP = {
   "📈 Mayor Forex": "cat_mayor", "Mayor Forex": "cat_mayor",
   "🔀 Cross Forex": "cat_cross", "Cross Forex": "cat_cross",
   "🏆 XAU & Komoditas": "cat_xau", "XAU & Komoditas": "cat_xau",
-  "🪙 Crypto": "cat_crypto", "Crypto": "cat_crypto",
   "🔍 Market Scan": "scan_menu", "Market Scan": "scan_menu",
   "📊 MTF Analysis": "mtf_analysis", "MTF Analysis": "mtf_analysis",
   "🛡️ Risk Setup": "risk_calc", "Risk Setup": "risk_calc",
@@ -2070,7 +2060,6 @@ const REPLY_MAP = {
   "🔍 Scan Mayor": "scan_mayor", "Scan Mayor": "scan_mayor",
   "🔍 Scan Cross": "scan_cross", "Scan Cross": "scan_cross",
   "🔍 Scan XAU": "scan_xau", "Scan XAU": "scan_xau",
-  "🔍 Scan Crypto": "scan_crypto", "Scan Crypto": "scan_crypto",
   "🔍 Scan Semua": "scan_all", "Scan Semua": "scan_all",
   "🧹 Clear Memory": "ai_clear", "Clear Memory": "ai_clear",
   "🚪 Keluar Terminal": "ai_exit", "Keluar Terminal": "ai_exit",
@@ -2261,15 +2250,7 @@ let count = 0; const batchSize = 20; const safeText = esc(text);
 for (let i = 0; i < users.length; i += batchSize) { const batch = users.slice(i, i + batchSize); await Promise.all(batch.map(async (u) => { try { if (msg.photo) await tgPost(env, "sendPhoto", { chat_id: u.id, photo: msg.photo[msg.photo.length - 1].file_id, caption: safeText, parse_mode: "HTML" }); else if (msg.video) await tgPost(env, "sendVideo", { chat_id: u.id, video: msg.video.file_id, caption: safeText, parse_mode: "HTML" }); else if (text) await tgSend(env, u.id, safeText); count++; } catch (e) {} })); if (i + batchSize < users.length) await new Promise((r) => setTimeout(r, 1e3)); }
 await setUser(env, user.id, { state: "main" }); await tgSend(env, chatId, `Broadcast ke ${count} users.`); return;
 }
-if (user.state === "wait_crypto_tx") {
-if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Dibatalkan.", getMainKB(isAdmin(env, user.id))); }
-const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
-if (!adminId) return tgSend(env, chatId, "Admin belum diatur.");
-let adminMsg = `<b>CRYPTO PAYMENT</b>\nUser: @${esc(user.username || "NoUsername")}\nID: <code>${user.id}</code>\n`;
-if (msg.photo) { adminMsg += `Bukti terlampir.`; await tgPost(env, "sendPhoto", { chat_id: adminId, photo: msg.photo[msg.photo.length - 1].file_id, caption: adminMsg, parse_mode: "HTML", reply_markup: { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] } }); }
-else { adminMsg += `TxHash: ${esc(text)}`; await tgSend(env, adminId, adminMsg, { inline_keyboard: [[btn("Balas", `reply_user_${user.id}`)]] }); }
-await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Bukti dikirim ke Admin.", getMainKB(isAdmin(env, user.id)));
-}
+
 if (user.state === "contact_admin") {
 if (text.toLowerCase() === "/cancel") { await setUser(env, user.id, { state: "main" }); return tgSend(env, chatId, "Dibatalkan."); }
 const adminIds = String(env.ADMIN_IDS || env.ADMIN_ID || "").split(",").map((v) => v.trim()).filter(Boolean); const adminId = adminIds[0];
