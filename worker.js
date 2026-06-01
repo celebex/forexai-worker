@@ -1295,9 +1295,9 @@ var chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => 
 var sigLabel = (s) => s === "BUY" ? "🟢 [BUY]" : s === "SELL" ? "🔴 [SELL]" : "🟡 [WAIT]";
 var biasBar = (pct) => `${"=".repeat(Math.round(pct / 10))}${".".repeat(10 - Math.round(pct / 10))} ${pct}%`;
 var KB_BACK_HOME = { keyboard: [[rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
-var getMainKB = (isAdminFlag) => { const kb = [[rBtn("🔋 Charge Energi")], [rBtn("📈 Mayor Forex"), rBtn("🔀 Cross Forex")], [rBtn("🏆 XAU & Komoditas")], [rBtn("🔍 Market Scan"), rBtn("📊 MTF Analysis")], [rBtn("📰 Market News"), rBtn("🛡️ Risk Setup")], [rBtn("🤖 AI Terminal"), rBtn("👥 Referral")]]; if (isAdminFlag) kb.push([rBtn("⚙️ Admin Panel")]); return { keyboard: kb, resize_keyboard: true, is_persistent: true }; };
+var getMainKB = (isAdminFlag) => { const kb = [[rBtn("🔋 Charge Energi")], [rBtn("📈 Mayor Forex"), rBtn("🔀 Cross Forex")], [rBtn("🏆 XAU & Komoditas")], [rBtn("🔍 Market Scan")], [rBtn("📰 Market News"), rBtn("🛡️ Risk Setup")], [rBtn("🤖 AI Terminal"), rBtn("👥 Referral")]]; if (isAdminFlag) kb.push([rBtn("⚙️ Admin Panel")]); return { keyboard: kb, resize_keyboard: true, is_persistent: true }; };
 var buildPairKB = (list) => ({ keyboard: [...chunk(list, 2).map((r) => r.map((p) => rBtn(p))), [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true });
-var tfKB = { keyboard: [[rBtn("⏱️ 5 Menit"), rBtn("⏱️ 15 Menit"), rBtn("⏱️ 30 Menit")], [rBtn("⏱️ 1 Jam"), rBtn("⏱️ 4 Jam")], [rBtn("📊 Lihat MTF Analysis")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
+var tfKB = { keyboard: [[rBtn("⏱️ 5 Menit"), rBtn("⏱️ 15 Menit"), rBtn("⏱️ 30 Menit")], [rBtn("⏱️ 1 Jam"), rBtn("⏱️ 4 Jam")], [rBtn("📊 Multi Timeframe")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var analysisKB = { keyboard: [[rBtn("🔄 Analisa Ulang"), rBtn("📈 Semua Indikator")], [rBtn("🛡️ Risk Setup"), rBtn("🔍 Scan Pasar")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var scanMenuKB = { keyboard: [[rBtn("🔍 Scan Mayor"), rBtn("🔍 Scan Cross")], [rBtn("🔍 Scan XAU")], [rBtn("🔍 Scan Semua"), rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
 var aiKB = { keyboard: [[rBtn("🧹 Clear Memory"), rBtn("🚪 Keluar Terminal")], [rBtn("🏠 Home")]], resize_keyboard: true, is_persistent: true };
@@ -1679,7 +1679,7 @@ else if (isPrem) txt += `\n<b>AI-3 EXECUTION PLAN</b> <i>[${modelNames.AI3}]</i>
 } else txt += `\n<b>AI-2 & AI-3 TERKUNCI</b>\n- Upgrade ke Premium untuk validasi AI mendalam.\n`;
 let conclusion = "";
 if (signal === "BUY" || signal === "SELL") { conclusion = `Quant Engine: <b>${signal}</b> (${quality}). Confluence: ${confluence.verdict}. ${isPrem ? `AI-2: <b>${ai2.status}</b>.` : ""}`; if (consensusTxt) conclusion += `\n- ${consensusTxt}`; }
-else conclusion = `Kondisi <b>NEUTRAL</b>. Disarankan WAIT.`;
+else conclusion = `Kondisi <b>NEUTRAL</b>. Disarankan WAIT.\n- Regime: ${ind.regime} | Faktor Trend: ${(ind.factors?.trend || 0).toFixed(2)}\n- Confluence: ${confluence.verdict} (${confluence.percentage}%)\n- Quality: ${quality} | Risk: ${ind.riskLvl}`;
 txt += `\n<b>KESIMPULAN</b>\n${conclusion}\n<i>${DISCLAIMERS[Math.floor(Math.random() * DISCLAIMERS.length)]}</i>\n<pre>${ts()}</pre>\n<i>-${COSTS.ANALYSIS} Energy | Sisa: ${user.energy}</i>`;
 await setUser(env, user.id, { state: "main" });
 return tgEdit(env, chatId, msgId, txt, analysisKB);
@@ -2064,7 +2064,7 @@ const REPLY_MAP = {
   "⏱️ 30 Menit": "t_30M", "30 Menit": "t_30M",
   "⏱️ 1 Jam": "t_1H", "1 Jam": "t_1H",
   "⏱️ 4 Jam": "t_4H", "4 Jam": "t_4H",
-  "📊 Lihat MTF Analysis": "mtf_analysis", "Lihat MTF Analysis": "mtf_analysis",
+  "📊 Multi Timeframe": "mtf_analysis", "Multi Timeframe": "mtf_analysis",
   "🔄 Analisa Ulang": "reanalyze", "Analisa Ulang": "reanalyze",
   "📈 Semua Indikator": "ind_all", "Semua Indikator": "ind_all",
   "🔍 Scan Pasar": "scan_menu", "Scan Pasar": "scan_menu",
