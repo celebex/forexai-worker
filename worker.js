@@ -1622,15 +1622,10 @@ let signal = ind.signal === "NEUTRAL" ? "WAIT" : ind.signal;
 
 if (macro.maxNewsWeight >= 8 && macro.minsToNews < 120) {
   signal = "WAIT"; quality = "C (Extreme News Risk)";
-} else if (signal !== "BUY" && signal !== "SELL") {
-  signal = "WAIT"; quality = "C";
-} else {
-  if (signal === "BUY" && bullPct < 50) {
-    signal = "WAIT"; quality = "C (Downgraded)";
-  }
-  if (signal === "SELL" && bullPct > 50) {
-    signal = "WAIT"; quality = "C (Downgraded)";
-  }
+} else if (signal === "BUY" && bullPct < 50) {
+  signal = "WAIT"; quality = "C (Downgraded)";
+} else if (signal === "SELL" && bullPct > 50) {
+  signal = "WAIT"; quality = "C (Downgraded)";
 }
 // Macro conflict filter: block signal if macro regime strongly opposes
 if (signal === "BUY" && macro.macroScore <= -35) {
