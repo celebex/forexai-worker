@@ -996,6 +996,68 @@ clearTimeout(id); if (!res.ok) throw new Error(`TwelveData HTTP ${res.status}`);
 const data = await res.json(); if (data.status === "error" || !data.values) throw new Error(data.message || "TwelveData error");
 return data.values.reverse().map((d) => ({ t: new Date(d.datetime).getTime() / 1e3, o: parseFloat(d.open), h: parseFloat(d.high), l: parseFloat(d.low), c: parseFloat(d.close), v: parseFloat(d.volume || 0) }));
 }
+const STOOQ_PAIRS = {
+  major: [
+    ["EUR/USD", "eurusd", 5], ["GBP/USD", "gbpusd", 5], ["USD/JPY", "usdjpy", 2],
+    ["USD/CHF", "usdchf", 5], ["USD/CAD", "usdcad", 5], ["AUD/USD", "audusd", 5],
+    ["NZD/USD", "nzdusd", 5]
+  ],
+  minor: [
+    ["EUR/GBP", "eurgbp", 5], ["EUR/JPY", "eurjpy", 3], ["GBP/JPY", "gbpjpy", 3],
+    ["AUD/JPY", "audjpy", 3], ["EUR/AUD", "euraud", 5], ["EUR/CAD", "eurcad", 5],
+    ["EUR/CHF", "eurchf", 5], ["GBP/AUD", "gbpaud", 5], ["GBP/CAD", "gbpcad", 5],
+    ["GBP/CHF", "gbpchf", 5], ["AUD/CAD", "audcad", 5], ["AUD/NZD", "audnzd", 5],
+    ["CAD/JPY", "cadjpy", 3], ["CHF/JPY", "chfjpy", 3], ["NZD/JPY", "nzdjpy", 3]
+  ],
+  exotic: [
+    ["USD/ZAR", "usdzar", 4], ["USD/MXN", "usdmxn", 4], ["USD/TRY", "usdtry", 4],
+    ["USD/SGD", "usdsgd", 5], ["USD/THB", "usdthb", 4], ["USD/SEK", "usdsek", 4],
+    ["USD/NOK", "usdnok", 4], ["USD/DKK", "usddkk", 5], ["USD/PLN", "usdpln", 5],
+    ["USD/CZK", "usdczk", 5], ["EUR/TRY", "eurtry", 4], ["GBP/TRY", "gbptry", 4],
+    ["EUR/ZAR", "eurzar", 4], ["GBP/ZAR", "gbpzar", 4]
+  ],
+  commodity: [
+    ["XAU/USD", "xauusd", 2], ["XAG/USD", "xagusd", 3], ["BRENT", "cl.f", 3], ["WTI", "cl.f", 3]
+  ]
+};
+async function fetchStooqQuote(symbol) {
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`https://stooq.com/q/l/?s=${symbol}&f=sd2t2ohlcv&h&e=csv`, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    if (!res.ok) return null;
+    const text = await res.text();
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return null;
+    const p = lines[1].split(",");
+    if (p[1] === "N/D" || !p[3] || p[3] === "N/D") return null;
+    return { o: parseFloat(p[3]), h: parseFloat(p[4]), l: parseFloat(p[5]), c: parseFloat(p[6]), date: p[1], time: p[2] };
+  } catch (e) { return null; }
+}
+async function fetchStooqCategory(cat) {
+  const pairs = STOOQ_PAIRS[cat] || STOOQ_PAIRS.major;
+  const results = [];
+  for (const [label, sym, dec] of pairs) {
+    const q = await fetchStooqQuote(sym);
+    if (q) {
+      const chg = q.c - q.o;
+      const pct = q.o ? (chg / q.o) * 100 : 0;
+      results.push({ pair: label, price: q.c, decimals: dec, open: q.o, high: q.h, low: q.l, change: chg, changePct: pct, direction: chg >= 0 ? "UP" : "DOWN", date: q.date, time: q.time });
+    }
+  }
+  return results;
+}
+async function fetchStooqSingle(symbol) {
+  const q = await fetchStooqQuote(symbol);
+  if (!q) return null;
+  const chg = q.c - q.o;
+  const pct = q.o ? (chg / q.o) * 100 : 0;
+  return { symbol, price: q.c, open: q.o, high: q.h, low: q.l, change: Math.round(chg * 100) / 100, changePct: Math.round(pct * 1000) / 1000, direction: chg >= 0 ? "UP" : "DOWN", spreadRange: Math.round((q.h - q.l) * 10000) / 10000, date: q.date, time: q.time };
+}
 async function fetchYahoo(sym, tf, host) {
 const { interval, range } = TF_CFG[tf] ?? TF_CFG["15M"];
 const controller = new AbortController(); const id = setTimeout(() => controller.abort(), 8e3);
@@ -2136,6 +2198,7 @@ return new Response(object.body, { headers });
 async function verifyAPIRequest(request, env) {
 const url = new URL(request.url);
 if (url.pathname === "/api/health") return { authorized: true, userId: "0" };
+if (url.pathname === "/api/forex") return { authorized: true, userId: "0" };
 const apiKey = request.headers.get("X-API-Key") || request.headers.get("Authorization")?.replace("Bearer ", "");
 if (!apiKey) return { authorized: false, error: "Missing API Key", status: 401 };
 if (env.MASTER_API_KEY && apiKey === env.MASTER_API_KEY) return { authorized: true, isAdmin: true, userId: "ADMIN" };
@@ -2178,6 +2241,61 @@ if (path === "/api/signals") { const pair = url.searchParams.get("pair") || "XAU
 if (path === "/api/signal") { const pair = url.searchParams.get("pair") || "EURUSD"; const tf = url.searchParams.get("tf") || "15M"; const m = await getMarketData(env, pair, tf); if (!m) return jsonResponse({ error: "No data" }, 404); const stats = await getGlobalStats(env, pair, tf); const ind = await getCachedIndicators(env, m, pair, tf, true, stats); return jsonResponse({ signal: ind.signal, confidence: (ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct) / 100, price: m.p, pair, timestamp: Date.now() }); }
 if (path.startsWith("/api/scan/")) { const cat = path.split("/")[3]; const tf = url.searchParams.get("tf") || "15M"; const list = cat === "all" ? ALL_PAIRS : PAIRS[cat] ?? PAIRS.mayor; const res = []; const stats = await getGlobalStats(env); for (const pair of list) { try { const m = await getMarketData(env, pair, tf); if (m) { const ind = await getCachedIndicators(env, m, pair, tf, false, stats); const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct; res.push({ pair, signal: ind.signal, conf, rsi: ind.rsiV, price: m.p, reason: ind.reasons[0] || "" }); } } catch (e) {} } return jsonResponse({ category: cat, tf, results: res }); }
 if (path === "/api/ai" && request.method === "POST") { const body = await request.json(); const prompt = body.prompt; const pair = body.pair || "XAUUSD"; const tf = body.tf || "15M"; if (!await consumeEnergy(env, user, COSTS.CHAT)) return jsonResponse({ error: "Not enough energy" }, 403); const m = await getMarketData(env, pair, tf); let mktCtx = "Data tidak tersedia."; if (m) { const ind = await getCachedIndicators(env, m, pair, tf, true); const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct; mktCtx = `Pair:${pair} TF:${tf} Price:${m.p} Signal:${ind.signal}(${conf}%)`; } const sysLock = `Anda adalah FOREX AI TERMINAL Quant Engine. Context: ${mktCtx}`; const messages = [{ role: "system", content: sysLock }, { role: "user", content: prompt }]; let aiRes = await callAI(env, "nim", { prompt: messages, model: "nemotron-3-nano-30b-a3b", traceId: "API", useCache: false }); if (!aiRes || aiRes.includes("error")) aiRes = await callAI(env, "groq", { prompt: messages, model: "llama-3.3-70b-versatile", traceId: "API", useCache: false }); return jsonResponse({ response: aiRes }); }
+if (path === "/api/forex") {
+  const cat = url.searchParams.get("cat") || "all";
+  const cacheKey = `forex:stooq:${cat}`;
+  if (env.CACHE) { const cached = await env.CACHE.get(cacheKey, { type: "json" }); if (cached) return jsonResponse(cached); }
+  let result = {};
+  if (cat === "all") {
+    for (const c of ["major", "minor", "exotic", "commodity"]) result[c] = await fetchStooqCategory(c);
+  } else {
+    result[cat] = await fetchStooqCategory(cat);
+  }
+  result.source = "stooq.com";
+  result.timestamp = Date.now();
+  if (env.CACHE) await env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
+  return jsonResponse(result);
+}
+if (path === "/api/xau") {
+  const cacheKey = "forex:xau:stooq";
+  if (env.CACHE) { const cached = await env.CACHE.get(cacheKey, { type: "json" }); if (cached) return jsonResponse(cached); }
+  const q = await fetchStooqSingle("xauusd");
+  if (!q) return jsonResponse({ error: "XAU data unavailable" }, 503);
+  q.source = "stooq.com (real XAU/USD)";
+  q.timestamp = Date.now();
+  if (env.CACHE) await env.CACHE.put(cacheKey, JSON.stringify(q), { expirationTtl: 120 });
+  return jsonResponse(q);
+}
+if (path === "/api/prices") {
+  const cacheKey = "forex:prices:all";
+  if (env.CACHE) { const cached = await env.CACHE.get(cacheKey, { type: "json" }); if (cached) return jsonResponse(cached); }
+  const result = { timestamp: Date.now(), source: "exchangerate-api + stooq" };
+  try {
+    const exRes = await fetch("https://api.exchangerate-api.com/v4/latest/USD", { headers: { "User-Agent": "ForexAI/2.0" }, signal: AbortSignal.timeout(10000) });
+    const exData = await exRes.json();
+    const r = exData.rates || {};
+    result.forex = {
+      EURUSD: r.EUR ? Math.round(1 / r.EUR * 1e5) / 1e5 : null,
+      GBPUSD: r.GBP ? Math.round(1 / r.GBP * 1e5) / 1e5 : null,
+      USDJPY: r.JPY ? Math.round(r.JPY * 100) / 100 : null,
+      USDCHF: r.CHF ? Math.round(1 / r.CHF * 1e5) / 1e5 : null,
+      USDCAD: r.CAD ? Math.round(1 / r.CAD * 1e5) / 1e5 : null,
+      AUDUSD: r.AUD ? Math.round(1 / r.AUD * 1e5) / 1e5 : null,
+      NZDUSD: r.NZD ? Math.round(1 / r.NZD * 1e5) / 1e5 : null
+    };
+  } catch (e) { result.forex = { error: e.message }; }
+  try {
+    const gRes = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", { headers: { "User-Agent": "ForexAI/2.0" }, signal: AbortSignal.timeout(8000) });
+    const gData = await gRes.json();
+    result.gold = { XAUUSD: Math.round(parseFloat(gData.price) * 100) / 100 };
+  } catch (e) { result.gold = { error: e.message }; }
+  const xau = await fetchStooqSingle("xauusd");
+  if (xau) result.xau_spot = xau;
+  const xag = await fetchStooqSingle("xagusd");
+  if (xag) result.xag_spot = xag;
+  if (env.CACHE) await env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: 120 });
+  return jsonResponse(result);
+}
 return jsonResponse({ error: "Not found" }, 404);
 } catch (e) { return jsonResponse({ error: e.message }, 500); }
 }
