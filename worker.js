@@ -1137,13 +1137,25 @@ return m;
 var NEWS_WEIGHTS = { "FOMC": 10, "RATE": 10, "NFP": 9, "CPI": 9, "ECB": 8, "BOE": 8, "POWELL": 8, "GDP": 7, "PPI": 6, "PMI": 5, "RETAIL SALES": 4, "UNEMPLOYMENT": 4 };
 function getNewsWeight(title) { const t = title.toUpperCase(); for (const [key, weight] of Object.entries(NEWS_WEIGHTS)) if (t.includes(key)) return weight; return 3; }
 async function fetchForexFactoryNews(env) {
-return await withCache(env, "news:calendar", 600, async () => {
-try {
-const res = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", { signal: AbortSignal.timeout(5e3) });
-if (!res.ok) return [];
-const data = await res.json(); const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
-return data.filter((d) => d.impact === "High" && ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"].includes(d.country) && new Date(d.date).getTime() >= todayStart.getTime()).map((d) => ({ title: d.title, country: d.country, impact: d.impact, date: d.date, forecast: d.forecast, previous: d.previous, actual: d.actual, timeMs: new Date(d.date).getTime(), weight: getNewsWeight(d.title) })).sort((a, b) => a.timeMs - b.timeMs);
-} catch (e) { return []; }
+return await withCache(env, "news:calendar", 1800, async () => {
+// Retry up to 2 times with backoff for rate limiting
+for (let attempt = 0; attempt < 2; attempt++) {
+  try {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
+    const res = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", {
+      signal: AbortSignal.timeout(8000),
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+    });
+    if (!res.ok) continue;
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("json")) continue; // Rate limited HTML response
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) continue;
+    const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
+    return data.filter((d) => d.impact === "High" && ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"].includes(d.country) && new Date(d.date).getTime() >= todayStart.getTime()).map((d) => ({ title: d.title, country: d.country, impact: d.impact, date: d.date, forecast: d.forecast, previous: d.previous, actual: d.actual, timeMs: new Date(d.date).getTime(), weight: getNewsWeight(d.title) })).sort((a, b) => a.timeMs - b.timeMs);
+  } catch (e) { continue; }
+}
+return []; // All retries failed
 });
 }
 async function checkUpcomingNews(env, pair) {
