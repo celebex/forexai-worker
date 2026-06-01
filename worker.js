@@ -1193,31 +1193,19 @@ bullPct = Math.max(1, Math.min(99, bullPct + techScore));
 let signal = "NEUTRAL", quality = "C";
 if (bullPct >= 58) { signal = "BUY"; quality = bullPct >= 75 ? "A" : "B"; }
 else if (bullPct <= 42) { signal = "SELL"; quality = bullPct <= 25 ? "A" : "B"; }
-// Wrong-direction filter: block signal when strong opposing evidence
+// Wrong-direction filter: block signal only when 2+ opposing factors present (not just 1)
 if (signal === "BUY") {
-  const bearishTrend = f_trend < -0.4;
-  const bearishStruct = structState.bias === "BEARISH" || structState.structScore < -0.8;
-  const bearishMACD = volumeReliable && instMACD.bias === "🔴 BEARISH";
-  if (bearishTrend || bearishStruct || bearishMACD) {
+  const bearCount = [f_trend < -0.4, structState.bias === "BEARISH" || structState.structScore < -0.8, volumeReliable && instMACD.bias === "🔴 BEARISH"].filter(Boolean).length;
+  if (bearCount >= 2) {
     signal = "NEUTRAL"; quality = "C";
-    const reasons_wd = [];
-    if (bearishTrend) reasons_wd.push("Bearish Trend");
-    if (bearishStruct) reasons_wd.push("Bearish Structure");
-    if (bearishMACD) reasons_wd.push("Bearish MACD (vol reliable)");
-    reasons.push("⚠️ BUY blocked — " + reasons_wd.join(", ") + " → NEUTRAL");
+    reasons.push("⚠️ BUY blocked — " + bearCount + " bearish factors → NEUTRAL");
   }
 }
 if (signal === "SELL") {
-  const bullishTrend = f_trend > 0.4;
-  const bullishStruct = structState.bias === "BULLISH" || structState.structScore > 0.8;
-  const bullishMACD = volumeReliable && instMACD.bias === "🟢 BULLISH";
-  if (bullishTrend || bullishStruct || bullishMACD) {
+  const bullCount = [f_trend > 0.4, structState.bias === "BULLISH" || structState.structScore > 0.8, volumeReliable && instMACD.bias === "🟢 BULLISH"].filter(Boolean).length;
+  if (bullCount >= 2) {
     signal = "NEUTRAL"; quality = "C";
-    const reasons_wd = [];
-    if (bullishTrend) reasons_wd.push("Bullish Trend");
-    if (bullishStruct) reasons_wd.push("Bullish Structure");
-    if (bullishMACD) reasons_wd.push("Bullish MACD (vol reliable)");
-    reasons.push("⚠️ SELL blocked — " + reasons_wd.join(", ") + " → NEUTRAL");
+    reasons.push("⚠️ SELL blocked — " + bullCount + " bullish factors → NEUTRAL");
   }
 }
 // Exhaustion/entropy quality downgrade
@@ -1558,10 +1546,10 @@ if (macro.maxNewsWeight >= 8 && macro.minsToNews < 120) {
 } else if (signal !== "BUY" && signal !== "SELL") {
   signal = "WAIT"; quality = "C";
 } else {
-  if (signal === "BUY" && bullPct < 55) {
+  if (signal === "BUY" && bullPct < 52) {
     signal = "WAIT"; quality = "C (Downgraded)";
   }
-  if (signal === "SELL" && bullPct > 45) {
+  if (signal === "SELL" && bullPct > 48) {
     signal = "WAIT"; quality = "C (Downgraded)";
   }
 }
@@ -1599,8 +1587,8 @@ if (htfConflict) {
 if (confluence.strength > 0.6 && signal !== "WAIT" && signal !== "NEUTRAL") { if ((signal === "BUY" && confluence.direction === "BULLISH") || (signal === "SELL" && confluence.direction === "BEARISH")) { bullPct = Math.min(99, bullPct + confluence.strength * 10); if (!quality.includes("A+")) quality = quality === "A" ? "A+" : "A"; ind.reasons.push(`MTF Confluence ${confluence.verdict} (${confluence.percentage}%)`); } }
 else if (confluence.strength < 0.2 && signal !== "WAIT") { quality = quality.includes("A") ? "B (Low Confluence)" : quality; ind.reasons.push(`Low MTF Confluence (${confluence.percentage}%)`); }
 if (bt && Number(bt.exp) < 0 && signal !== "WAIT" && signal !== "NEUTRAL") { quality = "C (Neg. Expectancy)"; bullPct = signal === "BUY" ? Math.max(45, bullPct - 15) : Math.min(55, bullPct + 15); ind.reasons.push(`Quant Warning: Backtest Expectancy Negatif`); }
-if (signal === "BUY" && bullPct < 55) { signal = "WAIT"; quality = "C (Downgraded)"; }
-else if (signal === "SELL" && bullPct > 45) { signal = "WAIT"; quality = "C (Downgraded)"; }
+if (signal === "BUY" && bullPct < 52) { signal = "WAIT"; quality = "C (Downgraded)"; }
+  else if (signal === "SELL" && bullPct > 48) { signal = "WAIT"; quality = "C (Downgraded)"; }
 let displayConf = signal === "SELL" ? 100 - bullPct : bullPct;
 
 const weakQuality =
@@ -1737,9 +1725,24 @@ const now = Date.now();
 if (now - (user.last_refresh || 0) < 1e4) { if (cbId) tgAns(env, cbId, "Tunggu 10 detik!", true).catch(() => {}); else tgSend(env, chatId, "Tunggu 10 detik!").catch(() => {}); return; }
 if (!await consumeEnergy(env, user, COSTS.MULTITF, chatId, cbId)) return tgEdit(env, chatId, msgId, "Energy tidak cukup.", { inline_keyboard: [[btn("🔋 Top Up", "store")]] });
 await setUser(env, user.id, { last_refresh: now });
-await tgLoading(env, chatId, msgId, 20, `Memuat MTF ${user.pair}...`);
+await tgLoading(env, chatId, msgId, 10, `Memuat data ${user.pair}...`);
 const stats = await getGlobalStats(env, user.pair);
-const rowsData = await Promise.all(TFS.map(async (tf) => { try { const m = await getMarketData(env, user.pair, tf); if (!m) return { tf, text: `| ${tf.padEnd(4)} -`, signal: "N/A", conf: 0 }; const ind = await getCachedIndicators(env, m, user.pair, tf, false, stats); const shortReason = ind.reasons[0] ? ind.reasons[0].substring(0, 12) : ""; const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct; return { tf, text: `| ${tf.padEnd(4)} ${sigLabel(ind.signal).padEnd(13)} ${conf.toFixed(0)}% ${shortReason}`, signal: ind.signal, conf }; } catch (e) { return { tf, text: `| ${tf.padEnd(4)} ERROR`, signal: "ERR", conf: 0 }; } }));
+await tgLoading(env, chatId, msgId, 30, `Analyzing 5M/15M ${user.pair}...`);
+const rowsData = [];
+for (let i = 0; i < TFS.length; i++) {
+  const tf = TFS[i];
+  const pct = 30 + Math.floor((i / TFS.length) * 55);
+  try {
+    await tgLoading(env, chatId, msgId, pct, `Analyzing ${tf} ${user.pair}...`);
+    const m = await getMarketData(env, user.pair, tf);
+    if (!m) { rowsData.push({ tf, text: `| ${tf.padEnd(4)} -`, signal: "N/A", conf: 0 }); continue; }
+    const ind = await getCachedIndicators(env, m, user.pair, tf, false, stats);
+    const shortReason = ind.reasons[0] ? ind.reasons[0].substring(0, 12) : "";
+    const conf = ind.signal === "SELL" ? 100 - ind.bullPct : ind.bullPct;
+    rowsData.push({ tf, text: `| ${tf.padEnd(4)} ${sigLabel(ind.signal).padEnd(13)} ${conf.toFixed(0)}% ${shortReason}`, signal: ind.signal, conf });
+  } catch (e) { rowsData.push({ tf, text: `| ${tf.padEnd(4)} ERROR`, signal: "ERR", conf: 0 }); }
+}
+await tgLoading(env, chatId, msgId, 90, "Calculating confluence...");
 const validRows = rowsData.filter(r => r.signal !== "ERR" && r.signal !== "N/A");
 const confluence = calculateConfluenceScore(validRows.map(r => ({ tf: r.tf, signal: r.signal, confidence: r.conf || 50 })));
 const rows = rowsData.map((r) => r.text);
@@ -1949,7 +1952,7 @@ const exactActions = {
 "store": () => showStore(env, user, chatId, msgId),
 "reanalyze": () => runAnalysis(env, user, chatId, msgId, cbId),
 "ind_all": () => showIndAll(env, user, chatId, msgId),
-"mtf_analysis": () => showMTFAnalysis(env, user, chatId, msgId, cbId),
+"mtf_analysis": async () => { await setUser(env, user.id, { state: "mtf_pending" }); return tgEdit(env, chatId, msgId, `<pre>MTF ANALYSIS\nPilih Pair untuk dianalisa:</pre>`, buildPairKB(ALL_PAIRS)); },
 "scan_menu": () => tgEdit(env, chatId, msgId, `<pre>MARKET SCAN
 Pilih kategori:</pre>`, scanMenuKB),
 "risk_calc": () => showRiskCalc(env, user, chatId, msgId),
@@ -2019,8 +2022,7 @@ return;
 }
 if (data.startsWith("acc_pay_") || data.startsWith("rej_pay_")) { if (!isAdmin(env, user.id)) throw new Error("AKSES_DITOLAK"); const isApprove = data.startsWith("acc_pay_"); const parts = data.split("_"); const targetId = parts[2]; const item = parts[3]; const txId = parts[4] || "old"; return processPersetujuanPembayaran(env, chatId, msgId, targetId, item, txId, isApprove); }
 if (data.startsWith("cat_")) { const cat = data.slice(4); return tgEdit(env, chatId, msgId, `<pre>PILIH PAIR - ${cat.toUpperCase()}</pre>`, buildPairKB(PAIRS[cat])); }
-if (data.startsWith("p_")) { const pair = data.slice(2); await setUser(env, user.id, { pair }); return tgEdit(env, chatId, msgId, `<pre>${pair}
-Pilih Timeframe:</pre>`, tfKB); }
+if (data.startsWith("p_")) { const pair = data.slice(2); await setUser(env, user.id, { pair }); if (user.state === "mtf_pending") { await setUser(env, user.id, { state: "main" }); return showMTFAnalysis(env, { ...user, pair }, chatId, msgId, cbId); } return tgEdit(env, chatId, msgId, `<pre>${pair}\nPilih Timeframe:</pre>`, tfKB); }
 if (data.startsWith("t_")) { const tf = data.slice(2); await setUser(env, user.id, { tf }); return runAnalysis(env, { ...user, tf }, chatId, msgId, cbId); }
 if (data.startsWith("scan_")) return runScan(env, user, chatId, msgId, data.slice(5), cbId);
 return tgAns(env, cbId, "Fitur belum tersedia.").catch(() => {});
