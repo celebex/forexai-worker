@@ -1111,7 +1111,28 @@ return data.filter((d) => d.impact === "High" && ["USD", "EUR", "GBP", "JPY", "A
 async function checkUpcomingNews(env, pair) {
 const news = await fetchForexFactoryNews(env); if (!news || news.length === 0) return null;
 const now = Date.now();
-const relevantNews = news.filter((n) => { const isRelevantPair = pair.includes(n.country) || pair === "XAUUSD" && n.country === "USD"; const isWithin24H = n.timeMs - now > 0 && n.timeMs - now < 864e5; return isRelevantPair && isWithin24H; });
+const isOil = pair === "UKOIL" || pair === "USOIL";
+const oilKeywords = ["EIA", "Crude Oil Inventories", "OPEC", "API Weekly", "Petroleum", "Oil"];
+const relevantNews = news.filter((n) => {
+  const isWithin24H = n.timeMs - now > 0 && n.timeMs - now < 864e5;
+  if (!isWithin24H) return false;
+  // Standard pair match
+  if (pair.includes(n.country) || (pair === "XAUUSD" && n.country === "USD")) return true;
+  // Oil: match by keyword in title OR country US/UK
+  if (isOil) {
+    const title = (n.title || "").toUpperCase();
+    if (oilKeywords.some(kw => title.includes(kw.toUpperCase()))) return true;
+    if (n.country === "US" || n.country === "UK") return true;
+  }
+  return false;
+});
+// Boost weight for oil-critical events
+if (isOil && relevantNews.length > 0) {
+  for (const rn of relevantNews) {
+    const title = (rn.title || "").toUpperCase();
+    if (oilKeywords.some(kw => title.includes(kw.toUpperCase()))) rn.weight = Math.max(rn.weight || 0, 9);
+  }
+}
 return relevantNews.length > 0 ? relevantNews : null;
 }
 async function fetchMarketNews(env, pair) {
@@ -1160,13 +1181,23 @@ const posteriorProb = calculatePosteriorProbability(assetClass, structState, reg
 let bullPct = Math.round(posteriorProb * 100);
 const primaryRegime = regimeVec.trend > 0.5 ? "TRENDING" : regimeVec.volatile > 0.4 ? "VOLATILE" : "RANGING";
 let reasons = []; 
+// Volume reliability: compare recent volume avg vs longer-term avg
+const recentVol = v.slice(-10).reduce((a, b) => a + (b || 0), 0) / 10;
+const longVol = v.slice(-50).reduce((a, b) => a + (b || 0), 0) / Math.min(50, v.length);
+const volumeReliable = longVol > 0 && recentVol > longVol * 0.3;
+
 let techScore = 0;
 if (f_trend > 0.3) techScore += 12;
 if (f_trend > 0.6) techScore += 15;
 if (f_trend < -0.3) techScore -= 12;
 if (f_trend < -0.6) techScore -= 15;
-if (instMACD.bias === "🟢 BULLISH") techScore += 10;
-if (instMACD.bias === "🔴 BEARISH") techScore -= 10;
+// instMACD only counted if volume reliable (it's volume-weighted)
+if (volumeReliable) {
+  if (instMACD.bias === "🟢 BULLISH") techScore += 10;
+  if (instMACD.bias === "🔴 BEARISH") techScore -= 10;
+} else {
+  reasons.push("⚠️ Volume unreliable — instMACD skipped from score");
+}
 if (physics.exhaustion) { techScore *= 0.4; reasons.push("Market Exhaustion (Physics Engine)"); }
 if (entropy > 0.85) { techScore *= 0.3; reasons.push("High Shannon Entropy (Random Market)"); } 
 else if (entropy < 0.4) { techScore *= 1.3; reasons.push("Low Entropy (Algorithmic Trend)"); }
@@ -1174,9 +1205,33 @@ bullPct = Math.max(1, Math.min(99, bullPct + techScore));
 let signal = "NEUTRAL", quality = "C";
 if (bullPct >= 58) { signal = "BUY"; quality = bullPct >= 75 ? "A" : "B"; }
 else if (bullPct <= 42) { signal = "SELL"; quality = bullPct <= 25 ? "A" : "B"; }
-// Wrong-direction filter: force NEUTRAL when signal contradicts trend
-if (signal === "BUY" && f_trend < -0.2) { signal = "NEUTRAL"; quality = "C"; reasons.push("⚠️ BUY vs Bearish Trend → NEUTRAL (Wrong Direction)"); }
-if (signal === "SELL" && f_trend > 0.2) { signal = "NEUTRAL"; quality = "C"; reasons.push("⚠️ SELL vs Bullish Trend → NEUTRAL (Wrong Direction)"); }
+// Wrong-direction filter: block signal when strong opposing evidence
+if (signal === "BUY") {
+  const bearishTrend = f_trend < -0.4;
+  const bearishStruct = structState.bias === "BEARISH" || structState.structScore < -0.8;
+  const bearishMACD = volumeReliable && instMACD.bias === "🔴 BEARISH";
+  if (bearishTrend || bearishStruct || bearishMACD) {
+    signal = "NEUTRAL"; quality = "C";
+    const reasons_wd = [];
+    if (bearishTrend) reasons_wd.push("Bearish Trend");
+    if (bearishStruct) reasons_wd.push("Bearish Structure");
+    if (bearishMACD) reasons_wd.push("Bearish MACD (vol reliable)");
+    reasons.push("⚠️ BUY blocked — " + reasons_wd.join(", ") + " → NEUTRAL");
+  }
+}
+if (signal === "SELL") {
+  const bullishTrend = f_trend > 0.4;
+  const bullishStruct = structState.bias === "BULLISH" || structState.structScore > 0.8;
+  const bullishMACD = volumeReliable && instMACD.bias === "🟢 BULLISH";
+  if (bullishTrend || bullishStruct || bullishMACD) {
+    signal = "NEUTRAL"; quality = "C";
+    const reasons_wd = [];
+    if (bullishTrend) reasons_wd.push("Bullish Trend");
+    if (bullishStruct) reasons_wd.push("Bullish Structure");
+    if (bullishMACD) reasons_wd.push("Bullish MACD (vol reliable)");
+    reasons.push("⚠️ SELL blocked — " + reasons_wd.join(", ") + " → NEUTRAL");
+  }
+}
 // Exhaustion/entropy quality downgrade
 if (physics.exhaustion && signal !== "NEUTRAL") { quality = "C"; reasons.push("⚠️ Quality → C: Market Exhaustion"); }
 if (entropy > 0.85 && signal !== "NEUTRAL") { quality = "C"; reasons.push("⚠️ Quality → C: High Entropy"); }
@@ -1410,6 +1465,8 @@ return `<pre>PROBABILISTIC FACTOR MODEL
 | Max DD      ${bt.maxDd}R
 | Expectancy  ${bt.exp}R
 | Robustness  ${bt.robustnessScore}/100
+------------------------------
+| ⚠️ Note     BT rough, live filters may differ
 ------------------------------</pre>`;
 }
 function tradeBlock(price, atrV, signal, pair, conf, f_vol, exp, tf = "15M", isHighNewsRisk = false, structState = null) {
